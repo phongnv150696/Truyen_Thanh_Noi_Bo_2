@@ -1,0 +1,15 @@
+.register-link {
+  text-decoration: none;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.register-link:hover {
+  text-decoration: underline;
+  color: #f58cf5;
+}
+
+.register-link {
+  text-decoration: none;
+  color: #9f45a2;
+}
