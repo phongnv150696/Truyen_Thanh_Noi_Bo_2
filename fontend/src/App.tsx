@@ -32,7 +32,7 @@ function App() {
 
   return (
     <Routes>
-      <Route path="/register" element={<Register />} />
+      <Route path="/register" element={<Register onLoginSuccess={handleLoginSuccess} />} />
       <Route
         path="/login"
         element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/dashboard" />}

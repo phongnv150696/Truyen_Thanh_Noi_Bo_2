@@ -1,97 +1,113 @@
-import { fastify } from 'fastify';
-import fastifyPostgres from '@fastify/postgres';
-import fastifyCors from '@fastify/cors';
-import fastifyEnv from '@fastify/env';
+import fastify, { FastifyInstance } from 'fastify';
+import postgres from '@fastify/postgres';
+import cors from '@fastify/cors';
 import fastifyJwt from '@fastify/jwt';
+import fastifyStatic from '@fastify/static';
+import fastifyMultipart from '@fastify/multipart';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import authRoutes from './routes/auth.js';
+import mediaRoutes from './routes/media.js';
+import deviceRoutes from './routes/devices.js';
+import channelRoutes from './routes/channels.js';
+import scheduleRoutes from './routes/schedules.js';
+import userRoutes from './routes/users.js';
+import settingsRoutes from './routes/settings.js';
+import notificationRoutes from './routes/notifications.js';
+import dashboardRoutes from './routes/dashboard.js';
 import 'dotenv/config';
 
-const server = fastify({
-  logger: {
-    transport: {
-      target: 'pino-pretty',
-      options: {
-        translateTime: 'HH:MM:ss Z',
-        ignore: 'pid,hostname',
-      },
-    },
-  },
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const server: FastifyInstance = fastify({
+  logger: true
 });
 
-const schema = {
-  type: 'object',
-  required: ['DATABASE_URL', 'PORT'],
-  properties: {
-    PORT: { type: 'string', default: '3000' },
-    DATABASE_URL: { type: 'string' },
-    REDIS_URL: { type: 'string' },
-    JWT_SECRET: { type: 'string' },
-  },
-};
-
-const options = {
-  schema: schema,
-  dotenv: true,
-  data: process.env,
-};
-
-async function bootstrap() {
-  try {
-    // Environment variables
-    await server.register(fastifyEnv, options);
-
+// Middleware & Plugins
+async function setupServer() {
     // CORS
-    await server.register(fastifyCors, {
-      origin: true, // Allow all origins for dev
+    await server.register(cors, {
+      origin: true
     });
 
-    // PostgreSQL
-    await server.register(fastifyPostgres, {
-      connectionString: process.env.DATABASE_URL,
+    // Database
+    await server.register(postgres, {
+      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw'
     });
 
     // JWT
     await server.register(fastifyJwt, {
-      secret: process.env.JWT_SECRET || 'OpenClawSecret2024',
+      secret: process.env.JWT_SECRET || 'openclaw_v2_secret_key_2024'
+    });
+
+    // Static Files (for uploads)
+    await server.register(fastifyStatic, {
+      root: join(__dirname, '../uploads'),
+      prefix: '/uploads/',
+    });
+
+    // Multipart/File Upload
+    await server.register(fastifyMultipart);
+
+    // Decorate server with auth validation
+    server.decorate("authenticate", async (request: any, reply: any) => {
+      try {
+        await request.jwtVerify();
+      } catch (err) {
+        reply.send(err);
+      }
     });
 
     // Routes
     await server.register(authRoutes, { prefix: '/auth' });
+    await server.register(mediaRoutes, { prefix: '/media' });
+    await server.register(deviceRoutes, { prefix: '/devices' });
+    await server.register(channelRoutes, { prefix: '/channels' });
+    await server.register(scheduleRoutes, { prefix: '/schedules' });
+    await server.register(userRoutes, { prefix: '/users' });
+    await server.register(settingsRoutes, { prefix: '/settings' });
+    await server.register(notificationRoutes, { prefix: '/notifications' });
+    await server.register(dashboardRoutes, { prefix: '/dashboard' });
 
     // Root route
     server.get('/', async () => {
       return { 
         name: 'OpenClaw API', 
         version: '2.0.0', 
-        status: 'running',
-        endpoints: ['/ping', '/db-test', '/auth/login']
+        status: 'online' 
       };
     });
 
     // Health check
-    server.get('/ping', async (_request, _reply) => {
-      return { status: 'ok', message: 'pong', timestamp: new Date().toISOString() };
+    server.get('/health', async () => {
+      return { status: 'healthy', timestamp: new Date().toISOString() };
     });
 
-    // Test DB connection
-    server.get('/db-test', async (_request, _reply) => {
-      const client = await server.pg.connect();
-      try {
-        const { rows } = await client.query('SELECT NOW()');
-        return { database: 'connected', time: rows[0].now };
-      } finally {
-        client.release();
-      }
-    });
+    return server;
+}
 
+// Start server
+const start = async () => {
+  try {
+    const app = await setupServer();
     const port = Number(process.env.PORT) || 3000;
-    await server.listen({ port, host: '0.0.0.0' });
     
-    console.log(`🚀 Server is running at http://0.0.0.0:${port}`);
+    await app.listen({ 
+      port, 
+      host: '0.0.0.0' 
+    });
+    
+    console.log(`
+    🚀 OpenClaw Backend V2 is running!
+    📡 Port: ${port}
+    🔗 URL: http://localhost:${port}
+    `);
   } catch (err) {
     server.log.error(err);
     process.exit(1);
   }
-}
+};
 
-bootstrap();
+start();
+

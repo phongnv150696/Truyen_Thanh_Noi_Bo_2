@@ -9,6 +9,14 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
+const registerSchema = z.object({
+  username: z.string().min(3),
+  password: z.string().min(6),
+  full_name: z.string().optional(),
+  email: z.string().email().optional(),
+  rank: z.string().optional(),
+});
+
 const logFile = path.join(process.cwd(), 'auth_debug.txt');
 const log = (msg: string) => {
   const timestamp = new Date().toISOString();
@@ -74,6 +82,57 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
     } catch (error: any) {
       log(`Error during login: ${error.message}`);
       return reply.code(500).send({ error: 'Lỗi hệ thống' });
+    }
+  });
+
+  server.post('/register', async (request, reply) => {
+    log('--- Register Request Received ---');
+    const result = registerSchema.safeParse(request.body);
+    if (!result.success) {
+      log('Invalid registration input');
+      return reply.code(400).send({ error: 'Dữ liệu không hợp lệ', details: result.error.format() });
+    }
+
+    const { username, password, full_name, email, rank } = result.data;
+    
+    try {
+      // Check if user exists
+      const existingUser = await server.pg.query(
+        'SELECT id FROM users WHERE username = $1',
+        [username]
+      );
+
+      if (existingUser.rows.length > 0) {
+        return reply.code(400).send({ error: 'Tên đăng nhập đã tồn tại' });
+      }
+
+      // Hash password
+      const password_hash = await bcrypt.hash(password, 10);
+
+      // Insert new user (default role_id = 5 for 'listener')
+      const { rows } = await server.pg.query(
+        'INSERT INTO users (username, password_hash, full_name, email, rank, role_id) VALUES ($1, $2, $3, $4, $5, 5) RETURNING id, username, full_name',
+        [username, password_hash, full_name || '', email || '', rank || '']
+      );
+
+      const newUser = rows[0];
+      log(`New user registered: ${newUser.username} (ID: ${newUser.id})`);
+
+      // Generate token
+      const token = server.jwt.sign({
+        id: newUser.id,
+        username: newUser.username,
+        full_name: newUser.full_name,
+      }, { expiresIn: '1d' });
+
+      return reply.code(201).send({
+        message: 'Đăng ký thành công',
+        token,
+        user: newUser
+      });
+    } catch (error: any) {
+      log(`Error during registration: ${error.message}`);
+      return reply.code(500).send({ error: 'Lỗi hệ thống khi đăng ký' });
     }
   });
 }
