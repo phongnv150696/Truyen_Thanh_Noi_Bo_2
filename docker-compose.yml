@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # 1. Database PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: openclaw-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: YourStrongPassword
+      POSTGRES_DB: openclaw
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  # 2. Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: openclaw-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+  # 3. Node.js Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: openclaw-backend
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:YourStrongPassword@postgres:5432/openclaw
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=openclaw_v2_secret_key_2024_production_grade
+      - PORT=3000
+    volumes:
+      - openclaw_uploads:/app/uploads
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  # 4. React Frontend (Vite) host bằng NGINX
+  frontend:
+    build:
+      context: ./fontend
+      dockerfile: Dockerfile
+    container_name: openclaw-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  postgres_data:
+  redis_data:
+  openclaw_uploads:

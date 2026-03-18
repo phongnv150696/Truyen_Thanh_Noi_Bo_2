@@ -38,7 +38,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
     try {
       const { rows } = await server.pg.query(
-        'SELECT id, username, password_hash, full_name, rank FROM users WHERE username = $1',
+        'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.username = $1',
         [username]
       );
 
@@ -67,6 +67,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         username: user.username,
         full_name: user.full_name,
         rank: user.rank,
+        role_name: user.role_name
       }, { expiresIn: '1d' });
 
       return { 
@@ -77,6 +78,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
           username: user.username,
           full_name: user.full_name,
           rank: user.rank,
+          role_name: user.role_name
         }
       };
     } catch (error: any) {
@@ -109,26 +111,16 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
       // Hash password
       const password_hash = await bcrypt.hash(password, 10);
 
-      // Insert new user (default role_id = 5 for 'listener')
-      const { rows } = await server.pg.query(
-        'INSERT INTO users (username, password_hash, full_name, email, rank, role_id) VALUES ($1, $2, $3, $4, $5, 5) RETURNING id, username, full_name',
-        [username, password_hash, full_name || '', email || '', rank || '']
+      // Insert into user_registrations (status = 'pending')
+      await server.pg.query(
+        'INSERT INTO user_registrations (username, password_hash, full_name, email, rank, status) VALUES ($1, $2, $3, $4, $5, $6)',
+        [username, password_hash, full_name || '', email || '', rank || '', 'pending']
       );
 
-      const newUser = rows[0];
-      log(`New user registered: ${newUser.username} (ID: ${newUser.id})`);
-
-      // Generate token
-      const token = server.jwt.sign({
-        id: newUser.id,
-        username: newUser.username,
-        full_name: newUser.full_name,
-      }, { expiresIn: '1d' });
+      log(`User registration pending approval: ${username}`);
 
       return reply.code(201).send({
-        message: 'Đăng ký thành công',
-        token,
-        user: newUser
+        message: 'Đăng ký thành công. Vui lòng chờ quản trị viên phê duyệt tài khoản của bạn.'
       });
     } catch (error: any) {
       log(`Error during registration: ${error.message}`);

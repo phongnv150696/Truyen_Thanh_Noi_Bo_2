@@ -1,12 +1,8 @@
-import pg from 'pg';
-const { Client } = pg;
-
-const DATABASE_URL = 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw';
+import { getDbClient } from './db.js';
+import 'dotenv/config';
 
 async function checkTables() {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-  });
+  const client = getDbClient();
 
   try {
     await client.connect();

@@ -12,28 +12,42 @@ import deviceRoutes from './routes/devices.js';
 import channelRoutes from './routes/channels.js';
 import scheduleRoutes from './routes/schedules.js';
 import userRoutes from './routes/users.js';
+import contentRoutes from './routes/content.js';
 import settingsRoutes from './routes/settings.js';
 import notificationRoutes from './routes/notifications.js';
+import aiRoutes from './routes/ai.js';
 import dashboardRoutes from './routes/dashboard.js';
+import dictionaryRoutes from './routes/dictionary.js';
+import fastifyWebsocket from '@fastify/websocket';
+import socketRoutes from './routes/socket.js';
+import profileRoutes from './routes/profile.js';
+import analyticsRoutes from './routes/analytics.js';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const server: FastifyInstance = fastify({
-  logger: true
+  logger: true,
+  bodyLimit: 1073741824 // 1GB
 });
 
 // Middleware & Plugins
 async function setupServer() {
     // CORS
     await server.register(cors, {
-      origin: true
+      origin: '*',
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization']
     });
+
+    // WebSocket support (Register early)
+    await server.register(fastifyWebsocket);
+    await server.register(socketRoutes);
 
     // Database
     await server.register(postgres, {
-      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw'
+      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5432/openclaw'
     });
 
     // JWT
@@ -48,7 +62,11 @@ async function setupServer() {
     });
 
     // Multipart/File Upload
-    await server.register(fastifyMultipart);
+    await server.register(fastifyMultipart, {
+      limits: {
+        fileSize: 1073741824 // 1GB
+      }
+    });
 
     // Decorate server with auth validation
     server.decorate("authenticate", async (request: any, reply: any) => {
@@ -59,6 +77,19 @@ async function setupServer() {
       }
     });
 
+    // RBAC: Check if user has specific roles
+    server.decorate("authorize", (allowedRoles: string[]) => {
+      return async (request: any, reply: any) => {
+        const user = request.user;
+        if (!user || !allowedRoles.includes(user.role_name)) {
+          return reply.code(403).send({ 
+            error: 'Forbidden', 
+            message: 'Bạn không có quyền thực hiện hành động này.' 
+          });
+        }
+      };
+    });
+
     // Routes
     await server.register(authRoutes, { prefix: '/auth' });
     await server.register(mediaRoutes, { prefix: '/media' });
@@ -66,9 +97,15 @@ async function setupServer() {
     await server.register(channelRoutes, { prefix: '/channels' });
     await server.register(scheduleRoutes, { prefix: '/schedules' });
     await server.register(userRoutes, { prefix: '/users' });
+    await server.register(contentRoutes, { prefix: '/content' });
     await server.register(settingsRoutes, { prefix: '/settings' });
     await server.register(notificationRoutes, { prefix: '/notifications' });
+    await server.register(aiRoutes, { prefix: '/ai' });
+    
     await server.register(dashboardRoutes, { prefix: '/dashboard' });
+    await server.register(dictionaryRoutes, { prefix: '/dictionary' });
+    await server.register(analyticsRoutes, { prefix: '/analytics' });
+    await server.register(profileRoutes, { prefix: '/profile' });
 
     // Root route
     server.get('/', async () => {

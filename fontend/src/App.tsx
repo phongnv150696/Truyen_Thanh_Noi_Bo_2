@@ -17,10 +17,24 @@ function App() {
       // Tạm thời mockup để test flow
       const savedUser = localStorage.getItem('openclaw_user')
       if (savedUser) {
-        setUser(JSON.parse(savedUser))
+        try {
+          setUser(JSON.parse(savedUser))
+          console.log('App: Loaded user from localStorage', savedUser)
+        } catch (e) {
+          console.error('App: Failed to parse saved user', e)
+          localStorage.removeItem('openclaw_user')
+        }
       }
     }
+    console.log('App: Finished loading state', { hasToken: !!token })
     setLoading(false)
+    
+    // Safety timeout to ensure loading screen doesn't stay forever
+    const timeout = setTimeout(() => {
+      setLoading(false)
+    }, 5000)
+    
+    return () => clearTimeout(timeout)
   }, [])
 
   const handleLoginSuccess = (userData: any) => {
@@ -28,7 +42,19 @@ function App() {
     localStorage.setItem('openclaw_user', JSON.stringify(userData))
   }
 
-  if (loading) return null
+  if (loading) {
+    return (
+      <div style={{ height: '100vh', background: '#0f172a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
+        <p>Đang khởi tạo hệ thống...</p>
+        <button 
+          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          style={{ marginTop: '1.5rem', padding: '8px 16px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', borderRadius: '8px', cursor: 'pointer' }}
+        >
+          Xóa cache & Tải lại
+        </button>
+      </div>
+    )
+  }
 
   return (
     <Routes>

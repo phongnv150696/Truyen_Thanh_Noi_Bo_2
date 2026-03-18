@@ -4,11 +4,12 @@ import { pipeline } from 'stream/promises';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { generateTTS } from '../utils/tts.js';
 
 export default async function mediaRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
   // 1. Upload Media
-  fastify.post('/upload', async (request, reply) => {
+  fastify.post('/upload', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'editor'])] }, async (request, reply) => {
     const data = await request.file();
     if (!data) {
       return reply.code(400).send({ error: 'No file uploaded' });
@@ -53,7 +54,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 2. List Media
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'editor'])] }, async (request, reply) => {
     const client = await fastify.pg.connect();
     try {
       const { rows } = await client.query('SELECT * FROM media_files ORDER BY created_at DESC');
@@ -64,7 +65,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 3. Delete Media
-  fastify.delete('/:id', async (request, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const client = await fastify.pg.connect();
     
@@ -95,7 +96,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 4. Update Media (Rename)
-  fastify.patch('/:id', async (request, reply) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { file_name } = request.body as { file_name: string };
 
@@ -116,6 +117,87 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
     } catch (err) {
       fastify.log.error(err);
       return reply.code(500).send({ error: 'Failed to update media' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // 5. TTS Generation
+  fastify.post('/tts', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor'])] }, async (request, reply) => {
+    const { text, voice, file_name } = request.body as { text: string; voice?: string; file_name?: string };
+    
+    if (!text) {
+      return reply.code(400).send({ error: 'Text is required' });
+    }
+
+    const uniqueFilename = `${uuidv4()}.mp3`;
+    const uploadPath = path.join(process.cwd(), 'uploads', uniqueFilename);
+    const finalFileName = file_name || `TTS_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.mp3`;
+
+    try {
+      // 1. Generate TTS
+      await generateTTS({
+        text,
+        voice,
+        outputPath: uploadPath
+      });
+
+      // 2. Get file size
+      const stats = fs.statSync(uploadPath);
+      const fileSize = stats.size;
+
+      // 3. Save to database
+      const client = await fastify.pg.connect();
+      try {
+        const query = `
+          INSERT INTO media_files (file_name, file_path, file_size, mime_type, status)
+          VALUES ($1, $2, $3, $4, $5)
+          RETURNING id
+        `;
+        const values = [finalFileName, uniqueFilename, fileSize, 'audio/mpeg', 'ready'];
+        const { rows } = await client.query(query, values);
+        
+        return reply.code(201).send({ 
+          message: 'TTS generation successful', 
+          fileId: rows[0].id,
+          fileName: finalFileName
+        });
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to generate TTS' });
+    }
+  });
+
+  // 6. Bulk delete media
+  fastify.post('/bulk-delete', async (request, reply) => {
+    const { ids } = request.body as { ids: number[] };
+    if (!ids || !ids.length) {
+      return reply.code(400).send({ error: 'No IDs provided' });
+    }
+
+    const client = await fastify.pg.connect();
+    try {
+      // Get file paths first
+      const { rows } = await client.query('SELECT file_path FROM media_files WHERE id = ANY($1)', [ids]);
+      
+      // Delete from DB
+      const result = await client.query('DELETE FROM media_files WHERE id = ANY($1)', [ids]);
+
+      // Delete from disk
+      for (const row of rows) {
+        const filePath = path.join(process.cwd(), 'uploads', row.file_path);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      }
+
+      return { message: `${result.rowCount} media files deleted successfully` };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to delete media files' });
     } finally {
       client.release();
     }

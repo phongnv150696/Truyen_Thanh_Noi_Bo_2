@@ -1,9 +1,7 @@
-import pkg from 'pg';
-const { Client } = pkg;
+import { getDbClient } from './db.js';
+import 'dotenv/config';
 
-const client = new Client({
-  connectionString: 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw',
-});
+const client = getDbClient();
 
 async function updatePassword() {
   try {

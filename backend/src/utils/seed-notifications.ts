@@ -1,12 +1,8 @@
-import pg from 'pg';
+import { getDbClient } from './db.js';
 import 'dotenv/config';
 
-const { Client } = pg;
-
 async function seedNotifications() {
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw'
-  });
+  const client = getDbClient();
 
   try {
     await client.connect();

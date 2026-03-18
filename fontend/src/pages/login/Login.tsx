@@ -4,7 +4,7 @@ import axios from 'axios'
 import { useNavigate, Link } from 'react-router-dom'
 import './loginCSS.css'
 
-const API_BASE_URL = 'http://localhost:3000'
+const API_BASE_URL = 'http://127.0.0.1:3000'
 
 export default function Login({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
   const [username, setUsername] = useState('')

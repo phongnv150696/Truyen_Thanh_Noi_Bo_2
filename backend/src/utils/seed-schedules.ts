@@ -1,12 +1,8 @@
-import pg from 'pg';
-const { Client } = pg;
+import { getDbClient } from './db.js';
+import 'dotenv/config';
 
-const DATABASE_URL = 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw';
-
-async function seedBroadcasting() {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-  });
+async function seedSchedules() {
+  const client = getDbClient();
 
   try {
     await client.connect();
@@ -55,4 +51,4 @@ async function seedBroadcasting() {
   }
 }
 
-seedBroadcasting();
+seedSchedules();

@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 export default async function deviceRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
   // Get all devices with unit info
-  fastify.get('/', async (request, reply) => {
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
     const client = await fastify.pg.connect();
     try {
       const { rows } = await client.query(`
@@ -19,7 +19,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   });
 
   // Add a new device
-  fastify.post('/', async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
     const { name, type, ip_address, unit_id } = request.body;
     const client = await fastify.pg.connect();
     try {
@@ -54,6 +54,13 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
       if (rows.length === 0) {
         return reply.status(404).send({ error: 'Device not found' });
       }
+
+      // Broadcast update via WebSocket
+      fastify.broadcast({
+        type: 'device_status_update',
+        device: rows[0]
+      });
+
       return rows[0];
     } finally {
       client.release();
@@ -63,13 +70,18 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   // Delete a device
   fastify.delete('/:id', async (request: any, reply) => {
     const { id } = request.params;
+    console.log(`[BACKEND] Attempting to delete device ID: ${id}`);
     const client = await fastify.pg.connect();
     try {
       const { rowCount } = await client.query('DELETE FROM devices WHERE id = $1', [id]);
+      console.log(`[BACKEND] Delete result for ID ${id}: rowCount=${rowCount}`);
       if (rowCount === 0) {
         return reply.status(404).send({ error: 'Device not found' });
       }
       return { success: true };
+    } catch (err) {
+      console.error(`[BACKEND] Error deleting device ID ${id}:`, err);
+      return reply.status(500).send({ error: 'Database error' });
     } finally {
       client.release();
     }
@@ -87,7 +99,33 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
       if (rows.length === 0) {
         return reply.status(404).send({ error: 'Device not found' });
       }
+
+      // Broadcast update via WebSocket
+      fastify.broadcast({
+        type: 'device_status_update',
+        device: rows[0]
+      });
+
       return rows[0];
+    } finally {
+      client.release();
+    }
+  });
+  
+  // Bulk delete devices
+  fastify.post('/bulk-delete', async (request: any, reply) => {
+    const { ids } = request.body as { ids: number[] };
+    if (!ids || !ids.length) {
+      return reply.code(400).send({ error: 'No IDs provided' });
+    }
+
+    const client = await fastify.pg.connect();
+    try {
+      const { rowCount } = await client.query('DELETE FROM devices WHERE id = ANY($1)', [ids]);
+      return { message: `${rowCount} devices deleted successfully` };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to delete devices' });
     } finally {
       client.release();
     }

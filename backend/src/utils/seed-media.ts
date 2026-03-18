@@ -1,16 +1,14 @@
 import pg from 'pg';
-const { Client } = pg;
 import fs from 'fs';
 import path from 'path';
+import { getDbClient } from './db.js';
+import 'dotenv/config';
 import { v4 as uuidv4 } from 'uuid';
 
-const DATABASE_URL = 'postgresql://postgres:YourStrongPassword@localhost:5433/openclaw';
 const UPLOADS_DIR = path.join(process.cwd(), 'uploads');
 
-async function seed() {
-  const client = new Client({
-    connectionString: DATABASE_URL,
-  });
+async function seedMedia() {
+  const client = getDbClient();
 
   try {
     await client.connect();
@@ -57,4 +55,4 @@ async function seed() {
   }
 }
 
-seed();
+seedMedia();
