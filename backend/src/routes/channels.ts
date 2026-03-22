@@ -32,4 +32,18 @@ export default async function channelRoutes(fastify: FastifyInstance, options: F
     }
     return result.rows[0];
   });
+
+  // 3. Get all devices for a specific channel
+  fastify.get('/:id/devices', async (request: any, reply) => {
+    const { id } = request.params;
+    const query = `
+      SELECT d.*, u.name as unit_name
+      FROM devices d
+      LEFT JOIN units u ON d.unit_id = u.id
+      WHERE d.channel_id = $1
+      ORDER BY d.name ASC
+    `;
+    const result = await fastify.pg.query(query, [id]);
+    return result.rows;
+  });
 }

@@ -13,7 +13,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:3000';
+const API_URL = `http://${window.location.hostname}:3000`;
 
 interface UserData {
   id: number;

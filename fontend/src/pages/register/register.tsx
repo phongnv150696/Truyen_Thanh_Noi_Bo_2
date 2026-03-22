@@ -4,7 +4,7 @@ import { User, Lock, Mail, Radio, Loader2, Award } from 'lucide-react'
 import axios from 'axios'
 import '../login/loginCSS.css'
 
-const API_BASE_URL = 'http://127.0.0.1:3000'
+const API_BASE_URL = `http://${window.location.hostname}:3000`;
 
 export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
     const [formData, setFormData] = useState({

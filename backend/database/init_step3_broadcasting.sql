@@ -15,7 +15,7 @@ CREATE TABLE channels (
 CREATE TABLE broadcast_schedules (
     id SERIAL PRIMARY KEY,
     channel_id INTEGER REFERENCES channels(id) ON DELETE CASCADE,
-    content_id INTEGER REFERENCES content_items(id),
+    content_id INTEGER REFERENCES content_items(id) ON DELETE CASCADE,
     scheduled_time TIMESTAMP NOT NULL, -- Thời gian dự kiến phát
     duration INTERVAL,
     repeat_pattern VARCHAR(50), -- daily, weekly, none
@@ -27,7 +27,7 @@ CREATE TABLE broadcast_schedules (
 CREATE TABLE broadcast_sessions (
     id SERIAL PRIMARY KEY,
     channel_id INTEGER REFERENCES channels(id),
-    content_id INTEGER REFERENCES content_items(id),
+    content_id INTEGER REFERENCES content_items(id) ON DELETE SET NULL,
     start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     end_time TIMESTAMP,
     actual_duration INTERVAL,
@@ -40,7 +40,7 @@ CREATE TABLE broadcast_sessions (
 CREATE TABLE on_demand_requests (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
-    content_id INTEGER REFERENCES content_items(id),
+    content_id INTEGER REFERENCES content_items(id) ON DELETxE CASCADE,
     channel_id INTEGER REFERENCES channels(id),
     priority INTEGER DEFAULT 1,
     status VARCHAR(50) DEFAULT 'pending', -- pending, playing, completed, rejected

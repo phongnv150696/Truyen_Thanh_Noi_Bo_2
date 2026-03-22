@@ -38,10 +38,17 @@ export default function SystemSettings() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
 
+  const getHeaders = () => {
+    const token = localStorage.getItem('openclaw_token')
+    return {
+      'Authorization': token ? `Bearer ${token}` : ''
+    }
+  }
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:3000/settings');
+      const res = await fetch(`http://${window.location.hostname}:3000/settings`, { headers: getHeaders() });
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
       setConfigs(Array.isArray(data.config) ? data.config : []);
@@ -74,9 +81,12 @@ export default function SystemSettings() {
   const handleUpdateConfig = async (key: string, value: string) => {
     setSaving(key);
     try {
-      const res = await fetch(`http://127.0.0.1:3000/settings/${key}`, {
+      const res = await fetch(`http://${window.location.hostname}:3000/settings/${key}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getHeaders()
+        },
         body: JSON.stringify({ value })
       });
       if (res.ok) {

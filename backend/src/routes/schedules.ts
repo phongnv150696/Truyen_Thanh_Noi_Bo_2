@@ -1,95 +1,380 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
+import { getFullURL } from '../utils/url.js';
 
 export default async function scheduleRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
-  // 1. Get all schedules with channel and content info
-  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
-    const query = `
-      SELECT 
-        s.id, s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
-        s.channel_id, s.content_id,
-        c.name as channel_name, c.mount_point,
-        ci.title as content_title
-      FROM broadcast_schedules s
-      LEFT JOIN channels c ON s.channel_id = c.id
-      LEFT JOIN content_items ci ON s.content_id = ci.id
-      ORDER BY s.scheduled_time ASC
-    `;
-    const result = await fastify.pg.query(query);
-    return result.rows;
+  // 1. Get all schedules (flat list) - with fallback for missing columns
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader', 'editor'])] }, async (request, reply) => {
+    const user = request.user as any;
+    try {
+      // Try full query first (with triggered_at and created_by)
+      let query = `
+        SELECT 
+          s.id, s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
+          s.channel_id, s.content_id,
+          s.triggered_at,
+          c.name as channel_name, c.mount_point,
+          ci.title as content_title,
+          u.full_name as author_name,
+          EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio
+        FROM broadcast_schedules s
+        LEFT JOIN channels c ON s.channel_id = c.id
+        LEFT JOIN content_items ci ON s.content_id = ci.id
+        LEFT JOIN users u ON ci.author_id = u.id
+        WHERE 1=1
+      `;
+      const values: any[] = [];
+      if (user.role_name !== 'admin') {
+        query += ` AND c.unit_id = $1`;
+        values.push(user.unit_id);
+      }
+      query += ` ORDER BY s.scheduled_time ASC`;
+      const result = await fastify.pg.query(query, values);
+      fastify.log.info(`GET /schedules returning ${result.rows.length} rows (full query)`);
+      return result.rows;
+    } catch (err1: any) {
+      fastify.log.warn(`Full query failed: ${err1.message}, trying fallback...`);
+      try {
+        // Fallback: simpler query without triggered_at and created_by
+        const fallback = `
+          SELECT 
+            s.id, s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
+            s.channel_id, s.content_id,
+            NULL as triggered_at,
+            c.name as channel_name, c.mount_point,
+            ci.title as content_title,
+            u.full_name as author_name,
+            EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio
+          FROM broadcast_schedules s
+          LEFT JOIN channels c ON s.channel_id = c.id
+          LEFT JOIN content_items ci ON s.content_id = ci.id
+          LEFT JOIN users u ON ci.author_id = u.id
+          ORDER BY s.scheduled_time ASC
+        `;
+        const result = await fastify.pg.query(fallback);
+        fastify.log.info(`GET /schedules returning ${result.rows.length} rows (fallback query)`);
+        return result.rows;
+      } catch (err2: any) {
+        fastify.log.error(`Fallback query also failed: ${err2.message}`);
+        return reply.code(500).send({ error: `Lỗi DB: ${err2.message}` });
+      }
+    }
   });
 
-  // 2. Create new schedule
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
+  // 1b. Get schedules GROUPED by content item (for new UI)
+  // Returns each content item once, with all its schedules (channels + timeslots) nested inside
+  fastify.get('/grouped', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
+    const user = request.user as any;
+    let query = `
+      SELECT 
+        s.id as schedule_id,
+        s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
+        s.channel_id, s.content_id, s.triggered_at,
+        c.name as channel_name, c.mount_point,
+        ci.title as content_title, ci.id as content_item_id,
+        u.full_name as author_name,
+        EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio,
+        CASE 
+          WHEN s.triggered_at IS NOT NULL THEN 'played'
+          WHEN s.scheduled_time <= NOW() THEN 'overdue'
+          ELSE 'pending'
+        END as play_status
+      FROM broadcast_schedules s
+      LEFT JOIN channels c ON s.channel_id = c.id
+      JOIN content_items ci ON s.content_id = ci.id
+      LEFT JOIN users u ON ci.author_id = u.id
+      WHERE ci.status IN ('approved', 'published')
+    `;
+    const values: any[] = [];
+    if (user.role_name !== 'admin') {
+      query += ` AND c.unit_id = $1`;
+      values.push(user.unit_id);
+    }
+    query += ` ORDER BY ci.id, s.scheduled_time ASC`;
+    const result = await fastify.pg.query(query, values);
+
+    // Group by content item on the server side
+    const groupedMap = new Map<number, any>();
+    for (const row of result.rows) {
+      if (!groupedMap.has(row.content_item_id)) {
+        groupedMap.set(row.content_item_id, {
+          content_id: row.content_item_id,
+          content_title: row.content_title,
+          author_name: row.author_name,
+          has_audio: row.has_audio,
+          schedules: []
+        });
+      }
+      groupedMap.get(row.content_item_id).schedules.push({
+        schedule_id: row.schedule_id,
+        scheduled_time: row.scheduled_time,
+        channel_id: row.channel_id,
+        channel_name: row.channel_name,
+        mount_point: row.mount_point,
+        duration: row.duration,
+        repeat_pattern: row.repeat_pattern,
+        is_active: row.is_active,
+        triggered_at: row.triggered_at,
+        play_status: row.play_status
+      });
+    }
+
+    return Array.from(groupedMap.values());
+  });
+
+  // 2. Create new schedule (also used by popup "+ Thêm giờ phát")
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
     const { channel_id, content_id, scheduled_time, duration, repeat_pattern } = request.body as any;
+    const user = request.user;
     
+    if (!channel_id || !content_id || !scheduled_time) {
+      return reply.code(400).send({ error: 'channel_id, content_id và scheduled_time là bắt buộc' });
+    }
+
+    // Security Check: Ensure channel belongs to user's unit
+    if (user.role_name !== 'admin') {
+      const chan = await fastify.pg.query('SELECT unit_id FROM channels WHERE id = $1', [channel_id]);
+      if (chan.rows.length === 0 || chan.rows[0].unit_id !== user.unit_id) {
+        return reply.code(403).send({ error: 'Bạn không có quyền lập lịch cho kênh này.' });
+      }
+    }
+
     const query = `
       INSERT INTO broadcast_schedules (channel_id, content_id, scheduled_time, duration, repeat_pattern)
       VALUES ($1, $2, $3, $4, $5)
       RETURNING *
     `;
-    const result = await fastify.pg.query(query, [channel_id, content_id, scheduled_time, duration, repeat_pattern]);
-    return result.rows[0];
+    const result = await fastify.pg.query(query, [channel_id, content_id, scheduled_time, duration || null, repeat_pattern || 'none']);
+    
+    // ... rest of the code ...
+
+    // Return with channel name for immediate UI update
+    const enriched = await fastify.pg.query(`
+      SELECT 
+        s.*, c.name as channel_name,
+        CASE 
+          WHEN s.triggered_at IS NOT NULL THEN 'played'
+          WHEN s.scheduled_time <= NOW() THEN 'overdue'
+          ELSE 'pending'
+        END as play_status
+      FROM broadcast_schedules s
+      LEFT JOIN channels c ON s.channel_id = c.id
+      WHERE s.id = $1
+    `, [result.rows[0].id]);
+
+    return reply.code(201).send(enriched.rows[0]);
   });
 
   // 3. Update schedule
-  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const { channel_id, content_id, scheduled_time, duration, repeat_pattern, is_active } = request.body as any;
-    
-    const query = `
-      UPDATE broadcast_schedules 
-      SET 
-        channel_id = COALESCE($1, channel_id),
-        content_id = COALESCE($2, content_id),
-        scheduled_time = COALESCE($3, scheduled_time),
-        duration = COALESCE($4, duration),
-        repeat_pattern = COALESCE($5, repeat_pattern),
-        is_active = COALESCE($6, is_active)
-      WHERE id = $7
-      RETURNING *
-    `;
-    const result = await fastify.pg.query(query, [channel_id, content_id, scheduled_time, duration, repeat_pattern, is_active, id]);
-    
-    if (result.rowCount === 0) {
-      return reply.code(404).send({ error: 'Schedule not found' });
+    const user = request.user;
+
+    const client = await fastify.pg.connect();
+    try {
+      // Security Check: Verify ownership
+      const existing = await client.query(`
+        SELECT s.id, c.unit_id 
+        FROM broadcast_schedules s
+        JOIN channels c ON s.channel_id = c.id
+        WHERE s.id = $1
+      `, [id]);
+
+      if (existing.rows.length === 0) return reply.code(404).send({ error: 'Schedule not found' });
+      if (user.role_name !== 'admin' && existing.rows[0].unit_id !== user.unit_id) {
+        return reply.code(403).send({ error: 'Bạn không có quyền sửa lịch phát của đơn vị khác.' });
+      }
+
+      const query = `
+        UPDATE broadcast_schedules 
+        SET 
+          channel_id = COALESCE($1, channel_id),
+          content_id = COALESCE($2, content_id),
+          scheduled_time = COALESCE($3, scheduled_time),
+          duration = COALESCE($4, duration),
+          repeat_pattern = COALESCE($5, repeat_pattern),
+          is_active = COALESCE($6, is_active)
+        WHERE id = $7
+        RETURNING *
+      `;
+      const result = await client.query(query, [channel_id, content_id, scheduled_time, duration, repeat_pattern, is_active, id]);
+      return result.rows[0];
+    } finally {
+      client.release();
     }
-    return result.rows[0];
   });
 
   // 4. Play Now (Force schedule to current time)
-  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
+  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
     const { id } = request.params;
-    const now = new Date().toISOString();
+    const user = request.user;
     
-    // Update scheduled_time to now and ensure it's active
-    const query = `
-      UPDATE broadcast_schedules 
-      SET scheduled_time = $1, is_active = true
-      WHERE id = $2
-      RETURNING *
-    `;
-    const result = await fastify.pg.query(query, [now, id]);
-    
-    if (result.rowCount === 0) {
-      return reply.code(404).send({ error: 'Schedule not found' });
+    const client = await fastify.pg.connect();
+    try {
+      // Security Check: Verify ownership
+      const existing = await client.query(`
+        SELECT s.id, c.unit_id 
+        FROM broadcast_schedules s
+        JOIN channels c ON s.channel_id = c.id
+        WHERE s.id = $1
+      `, [id]);
+
+      if (existing.rows.length === 0) return reply.code(404).send({ error: 'Schedule not found' });
+      if (user.role_name !== 'admin' && existing.rows[0].unit_id !== user.unit_id) {
+        return reply.code(403).send({ error: 'Bạn không có quyền phát lệnh của đơn vị khác.' });
+      }
+
+      // Update triggered_at to now and ensure it's active
+      const updateResult = await client.query(`
+        UPDATE broadcast_schedules 
+        SET is_active = true, triggered_at = NOW()
+        WHERE id = $1
+        RETURNING *
+      `, [id]);
+      
+      // Get broadcast info for WebSocket trigger
+      const queryInfo = `
+        SELECT 
+          s.id, s.scheduled_time, s.channel_id,
+          c.name as channel_name, c.mount_point,
+          ci.title as content_title,
+          mf.file_path, mf.file_name
+        FROM broadcast_schedules s
+        JOIN channels c ON s.channel_id = c.id
+        JOIN content_items ci ON s.content_id = ci.id
+        LEFT JOIN media_files mf ON ci.id = mf.content_id
+        WHERE s.id = $1
+        LIMIT 1
+      `;
+      const infoResult = await client.query(queryInfo, [id]);
+      const broadcastInfo = infoResult.rows[0];
+      
+      // Trigger via WebSocket
+      if ((fastify as any).broadcast) {
+        (fastify as any).broadcast({
+          type: 'broadcast-start',
+          channel_id: broadcastInfo?.channel_id,
+          schedule_id: id,
+          title: broadcastInfo?.content_title || 'Bản tin mới',
+          channel: broadcastInfo?.channel_name || 'Kênh mặc định',
+          mount_point: broadcastInfo?.mount_point,
+          file_url: broadcastInfo?.file_path ? getFullURL(`uploads/${broadcastInfo.file_path}`) : null,
+          user: user.full_name || 'Admin'
+        });
+      }
+      
+      // Log into broadcast_sessions
+      await client.query(`
+        INSERT INTO broadcast_sessions (schedule_id, content_id, channel_id, start_time, duration, status)
+        VALUES ($1, $2, $3, NOW(), COALESCE($4, 300), 'completed')
+      `, [id, broadcastInfo?.content_id, broadcastInfo?.channel_id, broadcastInfo?.duration]);
+
+      return { 
+        message: 'Broadcast triggered successfully', 
+        schedule: updateResult.rows[0],
+        broadcast: broadcastInfo 
+      };
+    } finally {
+      client.release();
     }
+  });
+
+  // 4b. Play All Channels for a Content (Outside Action)
+  fastify.post('/content/:contentId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
+    const { contentId } = request.params;
     
-    // In a real system, you'd trigger the broadcast engine here
-    fastify.log.info(`Immediate broadcast triggered for schedule ${id}`);
+    // 1. Find all channels that have this content scheduled (Unique channels)
+    const queryChannels = `
+      SELECT DISTINCT ON (s.channel_id) 
+             s.channel_id, c.name as channel_name, c.mount_point,
+             ci.title as content_title,
+             mf.file_path
+      FROM broadcast_schedules s
+      JOIN channels c ON s.channel_id = c.id
+      JOIN content_items ci ON s.content_id = ci.id
+      LEFT JOIN media_files mf ON ci.id = mf.content_id
+      WHERE s.content_id = $1
+        AND s.is_active = true
+      ORDER BY s.channel_id
+    `;
+    const chanResult = await fastify.pg.query(queryChannels, [contentId]);
     
-    return { message: 'Broadcast triggered successfully', schedule: result.rows[0] };
+    if (chanResult.rowCount === 0) {
+      return reply.code(404).send({ error: 'Không tìm thấy kênh nào có lịch phát bản tin này trong hôm nay.' });
+    }
+
+    // Check if any matching schedule has audio
+    const hasAudio = chanResult.rows.some(r => r.file_path);
+    if (!hasAudio) {
+      return reply.code(400).send({ error: 'Bản tin này hiện chưa được gán file âm thanh, không thể phát đa kênh.' });
+    }
+
+    const triggeredChannels: string[] = [];
+    const protocol = request.protocol || 'http';
+    const host = request.headers.host || '127.0.0.1:3000';
+    
+    // 2. Trigger broadcast for each channel
+    for (const channelInfo of chanResult.rows) {
+      if ((fastify as any).broadcast && channelInfo.file_path) {
+        (fastify as any).broadcast({
+          type: 'broadcast-start',
+          channel_id: channelInfo.channel_id,
+          title: channelInfo.content_title || 'Bản tin mới',
+          channel: channelInfo.channel_name || 'Kênh mặc định',
+          mount_point: channelInfo.mount_point,
+          file_url: getFullURL(`uploads/${channelInfo.file_path}`),
+          user: (request.user as any)?.full_name || 'Admin'
+        });
+        triggeredChannels.push(channelInfo.channel_name);
+      }
+    }
+
+    // 3. Update triggered_at for these schedules
+    await fastify.pg.query(`
+      UPDATE broadcast_schedules
+      SET triggered_at = NOW()
+      WHERE content_id = $1
+    `, [contentId]);
+
+    // 4. Log into broadcast_sessions for each triggered channel
+    for (const channelInfo of chanResult.rows) {
+      await fastify.pg.query(`
+        INSERT INTO broadcast_sessions (content_id, channel_id, start_time, duration, status)
+        VALUES ($1, $2, NOW(), 300, 'completed')
+      `, [contentId, channelInfo.channel_id]);
+    }
+
+    return { 
+      message: `Đã kích hoạt phát sóng trên ${chanResult.rowCount} kênh: ${triggeredChannels.join(', ')}`,
+      channels: triggeredChannels
+    };
   });
 
   // 5. Delete schedule
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
-    const result = await fastify.pg.query('DELETE FROM broadcast_schedules WHERE id = $1', [id]);
-    
-    if (result.rowCount === 0) {
-      return reply.code(404).send({ error: 'Schedule not found' });
+    const user = request.user;
+    const client = await fastify.pg.connect();
+    try {
+      // Verify ownership
+      const existing = await client.query(`
+        SELECT s.id, c.unit_id 
+        FROM broadcast_schedules s
+        JOIN channels c ON s.channel_id = c.id
+        WHERE s.id = $1
+      `, [id]);
+
+      if (existing.rows.length === 0) return reply.code(404).send({ error: 'Schedule not found' });
+      if (user.role_name !== 'admin' && existing.rows[0].unit_id !== user.unit_id) {
+        return reply.code(403).send({ error: 'Bạn không có quyền xóa lịch phát của đơn vị khác.' });
+      }
+
+      await client.query('DELETE FROM broadcast_schedules WHERE id = $1', [id]);
+      return { message: 'Schedule deleted successfully' };
+    } finally {
+      client.release();
     }
-    return { message: 'Schedule deleted successfully' };
   });
 
   // 5. Get AI proposals (Stub)

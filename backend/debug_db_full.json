@@ -1,0 +1,119 @@
+{
+  "media": [
+    {
+      "id": 2,
+      "file_name": "Thông báo huấn luyện quý III",
+      "content_id": 1
+    },
+    {
+      "id": 3,
+      "file_name": "Hiệu lệnh báo động khẩn cấp",
+      "content_id": 1
+    },
+    {
+      "id": 4,
+      "file_name": "Bản tin văn hóa quân sự Tập 4",
+      "content_id": 1
+    },
+    {
+      "id": 8,
+      "file_name": "Tạp chí phát thanh số 45",
+      "content_id": 1
+    },
+    {
+      "id": 14,
+      "file_name": "Cuộc đời vẫn đẹp sao.wav",
+      "content_id": 1
+    },
+    {
+      "id": 15,
+      "file_name": "Test_Flow_QK7.mp3",
+      "content_id": 1
+    },
+    {
+      "id": 16,
+      "file_name": "chi_thi_33.wav",
+      "content_id": 1
+    },
+    {
+      "id": 17,
+      "file_name": "Bác-Đang-Cùng-Chúng-Cháu-Hành-Quân.wav",
+      "content_id": 1
+    },
+    {
+      "id": 18,
+      "file_name": "TTS_chuong_trinh_ca_nhac_giai_tri.mp3",
+      "content_id": 1
+    },
+    {
+      "id": 19,
+      "file_name": "chuc_trach_3.wav",
+      "content_id": 1
+    },
+    {
+      "id": 20,
+      "file_name": "chuc_trach_7.wav",
+      "content_id": 1
+    },
+    {
+      "id": 21,
+      "file_name": "TTS_b_n_tin_th_c_t__ai_1773751268129.mp3",
+      "content_id": 1
+    },
+    {
+      "id": 22,
+      "file_name": "TTS_th_ng_b_o_di_n_t_p_llvt_qk7.mp3",
+      "content_id": 1
+    }
+  ],
+  "content": [
+    {
+      "id": 2,
+      "title": "Tin vắn quân sự chiều"
+    },
+    {
+      "id": 3,
+      "title": "Bản tin thi đua Quyết thắng"
+    },
+    {
+      "id": 11,
+      "title": "Bản tin thực tế AI 1773751268129"
+    },
+    {
+      "id": 5,
+      "title": "Bản tin thi đua Quyết thắng"
+    },
+    {
+      "id": 9,
+      "title": "Chuong trinh Ca nhac Giai tri"
+    },
+    {
+      "id": 7,
+      "title": "Bản tin thi đua Quyết thắng"
+    },
+    {
+      "id": 1,
+      "title": "Chào cờ sáng thứ 2"
+    },
+    {
+      "id": 6,
+      "title": "Bản tin thi đua Quyết thắng"
+    },
+    {
+      "id": 4,
+      "title": "Bản tin thi đua Quyết thắng"
+    },
+    {
+      "id": 10,
+      "title": "Thông báo diễn tập LLVT QK7"
+    },
+    {
+      "id": 8,
+      "title": "Tin Chinh Tri Quan Trong"
+    },
+    {
+      "id": 12,
+      "title": "Bản tin: đơn vị tổ chức lễ ra quân sáng thứ 2, yêu cầu mặc chỉnh tế"
+    }
+  ]
+}

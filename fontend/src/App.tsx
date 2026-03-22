@@ -4,30 +4,48 @@ import './App.css'
 import Login from './pages/login/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Register from './pages/register/register'
+import BroadcastTerminal from './pages/terminal/BroadcastTerminal'
 
 function App() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Kiểm tra token cũ trong localStorage khi app khởi động
-    const token = localStorage.getItem('openclaw_token')
-    if (token) {
-      // Trong thực tế sẽ gọi API verify token ở đây
-      // Tạm thời mockup để test flow
-      const savedUser = localStorage.getItem('openclaw_user')
-      if (savedUser) {
+    const verifyToken = async () => {
+      const token = localStorage.getItem('openclaw_token')
+      if (token) {
         try {
-          setUser(JSON.parse(savedUser))
-          console.log('App: Loaded user from localStorage', savedUser)
+          const res = await fetch(`http://${window.location.hostname}:3000/auth/verify`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+          
+          if (res.ok) {
+            const data = await (await res).json()
+            setUser(data.user)
+            localStorage.setItem('openclaw_user', JSON.stringify(data.user))
+            console.log('App: Token verified successfully', data.user)
+          } else {
+            console.warn('App: Token verification failed', res.status)
+            localStorage.removeItem('openclaw_token')
+            localStorage.removeItem('openclaw_user')
+            setUser(null)
+          }
         } catch (e) {
-          console.error('App: Failed to parse saved user', e)
-          localStorage.removeItem('openclaw_user')
+          console.error('App: Error verifying token', e)
+          const savedUser = localStorage.getItem('openclaw_user')
+          if (savedUser) {
+            try {
+              setUser(JSON.parse(savedUser))
+            } catch (err) {
+              localStorage.removeItem('openclaw_user')
+            }
+          }
         }
       }
+      setLoading(false)
     }
-    console.log('App: Finished loading state', { hasToken: !!token })
-    setLoading(false)
+
+    verifyToken()
     
     // Safety timeout to ensure loading screen doesn't stay forever
     const timeout = setTimeout(() => {
@@ -67,6 +85,7 @@ function App() {
         path="/dashboard"
         element={user ? <Dashboard user={user} onLogout={() => setUser(null)} /> : <Navigate to="/login" />}
       />
+      <Route path="/terminal" element={<BroadcastTerminal />} />
       <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
     </Routes>
   )

@@ -15,7 +15,9 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  RefreshCw
+  RefreshCw,
+  Link2,
+  Radio
 } from 'lucide-react'
 import AudioPlayerModal from './AudioPlayerModal'
 
@@ -25,7 +27,14 @@ interface MediaFile {
   file_path: string
   file_size: number
   mime_type: string
+  content_id: number | null
+  content_title: string | null
   created_at: string
+}
+
+interface ContentItem {
+  id: number
+  title: string
 }
 
 export default function MediaLibrary() {
@@ -46,6 +55,9 @@ export default function MediaLibrary() {
   const [editValue, setEditValue] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [playingFile, setPlayingFile] = useState<MediaFile | null>(null)
+  const [contents, setContents] = useState<ContentItem[]>([])
+  const [isLinkingModalOpen, setIsLinkingModalOpen] = useState(false)
+  const [linkingFileId, setLinkingFileId] = useState<number | null>(null)
 
   const getHeaders = () => {
     const token = localStorage.getItem('openclaw_token')
@@ -56,6 +68,7 @@ export default function MediaLibrary() {
 
   useEffect(() => {
     fetchFiles()
+    fetchContents()
 
     const handleClickOutside = (e: MouseEvent) => {
       if (!(e.target as HTMLElement).closest('.action-menu-container')) {
@@ -72,7 +85,7 @@ export default function MediaLibrary() {
 
   const fetchFiles = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:3000/media', {
+      const response = await fetch(`http://${window.location.hostname}:3000/media`, {
         headers: getHeaders()
       })
       const data = await response.json()
@@ -83,6 +96,42 @@ export default function MediaLibrary() {
       setFiles([])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchContents = async () => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3000/content`, {
+        headers: getHeaders()
+      })
+      const data = await response.json()
+      setContents(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Error fetching contents:', err)
+    }
+  }
+
+  const handleLinkMedia = async (fileId: number, contentId: number | null) => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3000/media/${fileId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders()
+        },
+        body: JSON.stringify({ content_id: contentId })
+      })
+
+      if (response.ok) {
+        const { file } = await response.json()
+        setFiles(prev => prev.map(f => f.id === fileId ? file : f))
+        setIsLinkingModalOpen(false)
+        setLinkingFileId(null)
+      } else {
+        setError('Không thể cập nhật liên kết.')
+      }
+    } catch (err) {
+      setError('Lỗi kết nối.')
     }
   }
 
@@ -98,7 +147,7 @@ export default function MediaLibrary() {
     formData.append('file', file)
 
     const xhr = new XMLHttpRequest()
-    
+
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
         const percent = Math.round((e.loaded / e.total) * 100)
@@ -127,7 +176,7 @@ export default function MediaLibrary() {
       setError('Lỗi kết nối server.')
     }
 
-    xhr.open('POST', 'http://127.0.0.1:3000/media/upload')
+    xhr.open('POST', `http://${window.location.hostname}:3000/media/upload`)
     const token = localStorage.getItem('openclaw_token')
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`)
@@ -140,7 +189,7 @@ export default function MediaLibrary() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa bản tin này?')) return
 
     try {
-      const response = await fetch(`http://127.0.0.1:3000/media/${id}`, {
+      const response = await fetch(`http://${window.location.hostname}:3000/media/${id}`, {
         method: 'DELETE',
         headers: getHeaders()
       })
@@ -168,9 +217,9 @@ export default function MediaLibrary() {
 
     setLoading(true)
     try {
-      const response = await fetch('http://127.0.0.1:3000/media/bulk-delete', {
+      const response = await fetch(`http://${window.location.hostname}:3000/media/bulk-delete`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...getHeaders()
         },
@@ -204,7 +253,7 @@ export default function MediaLibrary() {
   }
 
   const toggleItemSelect = (id: number) => {
-    setSelectedIds(prev => 
+    setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]
     )
   }
@@ -220,9 +269,9 @@ export default function MediaLibrary() {
     if (!editValue.trim()) return
 
     try {
-      const response = await fetch(`http://127.0.0.1:3000/media/${id}`, {
+      const response = await fetch(`http://${window.location.hostname}:3000/media/${id}`, {
         method: 'PATCH',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           ...getHeaders()
         },
@@ -243,7 +292,7 @@ export default function MediaLibrary() {
 
   const handleDownload = async (file: MediaFile) => {
     try {
-      const response = await fetch(`http://127.0.0.1:3000/uploads/${file.file_path}`)
+      const response = await fetch(`http://${window.location.hostname}:3000/uploads/${file.file_path}`)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -255,7 +304,7 @@ export default function MediaLibrary() {
       window.URL.revokeObjectURL(url)
     } catch (err) {
       const link = document.createElement('a')
-      link.href = `http://127.0.0.1:3000/uploads/${file.file_path}`
+      link.href = `http://${window.location.hostname}:3000/uploads/${file.file_path}`
       link.download = file.file_name
       link.click()
     }
@@ -263,6 +312,24 @@ export default function MediaLibrary() {
 
   const togglePlay = (file: MediaFile) => {
     setPlayingFile(file)
+  }
+
+  const handleBroadcast = async (file: MediaFile) => {
+    try {
+      const response = await fetch(`http://${window.location.hostname}:3000/media/${file.id}/broadcast`, {
+        method: 'POST',
+        headers: getHeaders()
+      })
+
+      if (response.ok) {
+        alert('Kích hoạt phát sóng hệ thống thành công!')
+      } else {
+        const data = await response.json()
+        setError(data.error || 'Lỗi khi kích hoạt phát sóng.')
+      }
+    } catch (err) {
+      setError('Lỗi kết nối khi gửi lệnh phát sóng.')
+    }
   }
 
   const itemsPerPage = 7
@@ -309,11 +376,11 @@ export default function MediaLibrary() {
             </div>
             <span style={{ fontWeight: 800, color: '#6366f1', fontSize: '1.2rem' }}>{uploadProgress.percent}%</span>
           </div>
-          
+
           <div style={{ width: '100%', height: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '10px', overflow: 'hidden', marginBottom: '0.8rem' }}>
             <div style={{ width: `${uploadProgress.percent}%`, height: '100%', background: 'linear-gradient(90deg, #6366f1, #a855f7)', borderRadius: '10px', transition: 'width 0.2s ease-out' }} />
           </div>
-          
+
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', fontWeight: 500 }}>
             <span>Đã tải: {formatSize(uploadProgress.loaded)}</span>
             <span>Tổng dung lượng: {formatSize(uploadProgress.total)}</span>
@@ -436,11 +503,11 @@ export default function MediaLibrary() {
         </div>
 
         {selectedIds.length > 0 && (
-          <div className="animate-fade-in" style={{ 
-            marginTop: '1.5rem', 
-            padding: '1rem 1.5rem', 
-            background: 'rgba(239, 68, 68, 0.1)', 
-            border: '1px solid rgba(239, 68, 68, 0.2)', 
+          <div className="animate-fade-in" style={{
+            marginTop: '1.5rem',
+            padding: '1rem 1.5rem',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
             borderRadius: '12px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -451,16 +518,16 @@ export default function MediaLibrary() {
               <span>Đã chọn {selectedIds.length} bản tin</span>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button 
+              <button
                 onClick={() => setSelectedIds([])}
-                className="btn-secondary" 
+                className="btn-secondary"
                 style={{ padding: '6px 16px', fontSize: '0.9rem' }}
               >
                 Hủy
               </button>
-              <button 
+              <button
                 onClick={handleBulkDelete}
-                className="btn-primary" 
+                className="btn-primary"
                 style={{ background: '#ef4444', padding: '6px 16px', fontSize: '0.9rem', border: 'none' }}
               >
                 Xóa tất cả đã chọn
@@ -473,7 +540,7 @@ export default function MediaLibrary() {
       {/* 4. Media List Section */}
       <section className="section-container animate-fade-in" style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
-          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Danh sách bản tin</h2>
+          <h2 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Danh sách Media</h2>
           <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{filteredFiles.length} tệp tin</span>
         </div>
 
@@ -499,16 +566,17 @@ export default function MediaLibrary() {
                 borderBottom: '1px solid rgba(255,255,255,0.03)'
               }}>
                 <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     checked={paginatedFiles.length > 0 && selectedIds.length === paginatedFiles.length}
                     onChange={toggleSelectAll}
                     style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                   />
                 </div>
-                <span style={{ flex: 2 }}>Thông tin</span>
-                <span style={{ flex: 1 }}>Kích thước</span>
-                <span style={{ flex: 1 }}>Ngày tạo</span>
+                <span style={{ flex: 1.5 }}>Thông tin</span>
+                <span style={{ flex: 1.2 }}>Bản tin liên kết</span>
+                <span style={{ flex: 0.8 }}>Kích thước</span>
+                <span style={{ flex: 0.8 }}>Ngày tạo</span>
                 <span style={{ width: '120px', textAlign: 'right' }}>Thao tác</span>
               </div>
 
@@ -526,8 +594,8 @@ export default function MediaLibrary() {
                   }}
                 >
                   <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <input 
-                      type="checkbox" 
+                    <input
+                      type="checkbox"
                       checked={selectedIds.includes(file.id)}
                       onChange={() => toggleItemSelect(file.id)}
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
@@ -585,7 +653,18 @@ export default function MediaLibrary() {
                           </button>
                         </div>
                       ) : (
-                        <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, color: '#f1f5f9' }}>{file.file_name}</h4>
+                        <h4 style={{
+                          margin: 0,
+                          fontSize: '0.95rem',
+                          fontWeight: 600,
+                          color: '#f1f5f9',
+                          maxWidth: '220px',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }} title={file.file_name}>
+                          {file.file_name}
+                        </h4>
                       )}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
                         <p style={{ margin: 0, color: '#475569', fontSize: '0.75rem' }}>ID: {file.id} • {file.mime_type.split('/')[1]}</p>
@@ -593,11 +672,26 @@ export default function MediaLibrary() {
                     </div>
                   </div>
 
-                  <div style={{ flex: 1, color: '#94a3b8', fontSize: '0.85rem' }}>
+                  <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div style={{
+                      fontSize: '0.85rem',
+                      color: file.content_title ? '#818cf8' : '#475569',
+                      fontWeight: file.content_title ? 600 : 400,
+                      maxWidth: '180px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {file.content_title || 'Thủ công/Chưa gắn'}
+                    </div>
+                    <span style={{ fontSize: '0.65rem', color: '#475569' }}>CID: {file.content_id || '--'}</span>
+                  </div>
+
+                  <div style={{ flex: 0.8, color: '#94a3b8', fontSize: '0.85rem' }}>
                     {formatSize(file.file_size)}
                   </div>
 
-                  <div style={{ flex: 1, color: '#64748b', fontSize: '0.85rem' }}>
+                  <div style={{ flex: 0.8, color: '#64748b', fontSize: '0.85rem' }}>
                     {formatSafeDate(file.created_at)}
                   </div>
 
@@ -642,7 +736,7 @@ export default function MediaLibrary() {
                           right: 0,
                           top: '100%',
                           marginTop: '8px',
-                          width: '160px',
+                          width: '180px',
                           background: 'rgba(15, 23, 42, 0.95)',
                           backdropFilter: 'blur(20px)',
                           border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -651,6 +745,42 @@ export default function MediaLibrary() {
                           zIndex: 100,
                           boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3)'
                         }} className="animate-fade-in">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBroadcast(file)
+                              setMenuOpenId(null)
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              background: 'rgba(99, 102, 241, 0.15)',
+                              border: 'none',
+                              color: '#818cf8',
+                              cursor: 'pointer',
+                              borderRadius: '8px',
+                              fontSize: '0.85rem',
+                              textAlign: 'left',
+                              transition: 'all 0.2s',
+                              fontWeight: 700,
+                              marginBottom: '4px'
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.25)'
+                              e.currentTarget.style.color = '#a5b4fc'
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.background = 'rgba(99, 102, 241, 0.15)'
+                              e.currentTarget.style.color = '#818cf8'
+                            }}
+                          >
+                            <Radio size={14} />
+                            <span>Phát qua loa HT</span>
+                          </button>
+
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -717,7 +847,42 @@ export default function MediaLibrary() {
                             }}
                           >
                             <Edit3 size={14} />
-                            <span>Chỉnh sửa</span>
+                            <span>Chỉnh sửa tên</span>
+                          </button>
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setLinkingFileId(file.id)
+                              setIsLinkingModalOpen(true)
+                              setMenuOpenId(null)
+                            }}
+                            style={{
+                              width: '100%',
+                              padding: '10px 12px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '10px',
+                              background: 'none',
+                              border: 'none',
+                              color: '#cbd5e1',
+                              cursor: 'pointer',
+                              borderRadius: '8px',
+                              fontSize: '0.85rem',
+                              textAlign: 'left',
+                              transition: 'all 0.2s'
+                            }}
+                            onMouseOver={(e) => {
+                              e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                              e.currentTarget.style.color = 'white'
+                            }}
+                            onMouseOut={(e) => {
+                              e.currentTarget.style.background = 'none'
+                              e.currentTarget.style.color = '#cbd5e1'
+                            }}
+                          >
+                            <Link2 size={14} />
+                            <span>Liên kết bản tin</span>
                           </button>
                         </div>
                       )}
@@ -837,11 +1002,116 @@ export default function MediaLibrary() {
         )}
       </section>
 
-      <AudioPlayerModal 
-        file={playingFile} 
-        isOpen={!!playingFile} 
-        onClose={() => setPlayingFile(null)} 
+      <AudioPlayerModal
+        file={playingFile}
+        isOpen={!!playingFile}
+        onClose={() => setPlayingFile(null)}
       />
+
+      {/* Linking Modal */}
+      {isLinkingModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.7)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'rgba(30, 41, 59, 0.8)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '24px',
+            width: '100%',
+            maxWidth: '500px',
+            padding: '32px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'white', margin: 0 }}>Liên kết bản tin</h3>
+              <button
+                onClick={() => setIsLinkingModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <p style={{ color: '#94a3b8', marginBottom: '20px', fontSize: '0.95rem' }}>
+              Chọn bản tin mà bạn muốn liên kết với tệp âm thanh này.
+            </p>
+
+            <div style={{ marginBottom: '32px' }}>
+              <select
+                style={{
+                  width: '100%',
+                  padding: '12px 16px',
+                  background: 'rgba(15, 23, 42, 0.6)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '12px',
+                  color: 'white',
+                  fontSize: '1rem',
+                  outline: 'none'
+                }}
+                onChange={(e) => setEditValue(e.target.value)}
+                defaultValue=""
+              >
+                <option value="" disabled>-- Chọn bản tin --</option>
+                <option value="null">Gỡ liên kết (Chưa gắn)</option>
+                {contents.map(item => (
+                  <option key={item.id} value={item.id}>{item.title}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setIsLinkingModalOpen(false)}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                Hủy
+              </button>
+              <button
+                onClick={() => {
+                  if (linkingFileId) {
+                    const cid = editValue === 'null' ? null : parseInt(editValue)
+                    handleLinkMedia(linkingFileId, cid)
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '12px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                  border: 'none',
+                  color: 'white',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 10px 15px -3px rgba(99, 102, 241, 0.3)'
+                }}
+              >
+                Lưu liên kết
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -5,16 +5,19 @@ import {
   RefreshCw, 
   Trash2, 
   Edit3, 
-  MoreHorizontal, 
+  MoreVertical, 
   Smartphone, 
   Speaker, 
   Activity,
   XCircle,
-  ChevronLeft,
-  ChevronRight,
   X,
   Check,
-  AlertCircle
+  AlertCircle,
+  LayoutGrid,
+  Building2,
+  Radio as RadioIcon,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface Device {
@@ -25,7 +28,14 @@ interface Device {
   status: 'online' | 'offline' | 'maintenance';
   unit_id?: number;
   unit_name?: string;
+  channel_id?: number;
+  channel_name?: string;
   last_seen: string;
+}
+
+interface Channel {
+  id: number;
+  name: string;
 }
 
 interface Unit {
@@ -33,20 +43,21 @@ interface Unit {
   name: string;
 }
 
-const API_URL = 'http://127.0.0.1:3000';
+const API_URL = `http://${window.location.hostname}:3000`;
 
 export default function DeviceManagement() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({ total: 0, online: 0, offline: 0, maintenance: 0 });
+  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
+  const [groupBy, setGroupBy] = useState<'none' | 'unit' | 'channel'>('none');
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   
-  // Pagination State
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 7;
 
   // CRUD States
   const [units, setUnits] = useState<Unit[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
   const [showModal, setShowModal] = useState<'add' | 'edit' | 'delete' | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -55,7 +66,8 @@ export default function DeviceManagement() {
     name: '',
     type: 'speaker',
     ip_address: '',
-    unit_id: ''
+    unit_id: '',
+    channel_id: ''
   });
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
@@ -106,13 +118,27 @@ export default function DeviceManagement() {
     }
   };
 
+  const fetchChannels = async () => {
+    try {
+      const response = await fetch(`${API_URL}/channels`, {
+        headers: getHeaders()
+      });
+      const data = await response.json();
+      setChannels(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error fetching channels:', error);
+    }
+  };
+
   useEffect(() => {
     fetchDevices();
     fetchUnits();
+    fetchChannels();
     setSelectedIds([]);
 
     // Initialize WebSocket
-    const socket = new WebSocket('ws://127.0.0.1:3000/ws');
+    const host = window.location.hostname || 'localhost';
+    const socket = new WebSocket(`ws://${host}:3000/ws`);
     
     socket.onopen = () => {
       console.log('Connected to WebSocket');
@@ -156,8 +182,18 @@ export default function DeviceManagement() {
     };
   }, []);
 
+  // Handle outside click for action menu
   useEffect(() => {
-    setCurrentPage(1);
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.action-menu-container')) {
+        setMenuOpenId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
     setSelectedIds([]);
   }, [searchTerm]);
 
@@ -166,22 +202,40 @@ export default function DeviceManagement() {
     dev.ip_address?.includes(searchTerm)
   );
 
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredDevices.length / itemsPerPage);
-  const paginatedDevices = filteredDevices.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const handlePageChange = (page: number) => {
-    setCurrentPage(page);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Grouping Logic
+  type GroupedDevices = { [key: string]: Device[] };
+  
+  const getGroupedData = (): GroupedDevices => {
+    if (groupBy === 'none') return { "Tất cả thiết bị": filteredDevices };
+    
+    return filteredDevices.reduce((acc: GroupedDevices, dev: Device) => {
+      let key = "Không xác định";
+      if (groupBy === 'unit') key = dev.unit_name || "Chưa phân đơn vị";
+      if (groupBy === 'channel') key = dev.channel_name || "Chưa gán kênh";
+      
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(dev);
+      return acc;
+    }, {});
   };
+
+  const groupedData = getGroupedData();
+
+  const toggleGroup = (groupName: string) => {
+    setExpandedGroups(prev => 
+      prev.includes(groupName) ? prev.filter(g => g !== groupName) : [...prev, groupName]
+    );
+  };
+
+  // Initialize all groups as expanded when group mode changes
+  useEffect(() => {
+    setExpandedGroups(Object.keys(groupedData));
+  }, [groupBy]);
+
 
   // Reset page when searching
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
-    setCurrentPage(1);
   };
 
   const getStatusColor = (status: string) => {
@@ -194,7 +248,7 @@ export default function DeviceManagement() {
   };
 
   const openAddModal = () => {
-    setFormData({ name: '', type: 'speaker', ip_address: '', unit_id: '' });
+    setFormData({ name: '', type: 'speaker', ip_address: '', unit_id: '', channel_id: '' });
     setError(null);
     setShowModal('add');
   };
@@ -205,7 +259,8 @@ export default function DeviceManagement() {
       name: device.name,
       type: device.type,
       ip_address: device.ip_address || '',
-      unit_id: device.unit_id?.toString() || ''
+      unit_id: device.unit_id?.toString() || '',
+      channel_id: device.channel_id?.toString() || ''
     });
     setError(null);
     setShowModal('edit');
@@ -237,7 +292,8 @@ export default function DeviceManagement() {
         },
         body: JSON.stringify({
           ...formData,
-          unit_id: formData.unit_id ? parseInt(formData.unit_id) : null
+          unit_id: formData.unit_id ? parseInt(formData.unit_id) : null,
+          channel_id: formData.channel_id ? parseInt(formData.channel_id) : null
         })
       });
 
@@ -314,13 +370,6 @@ export default function DeviceManagement() {
     }
   };
 
-  const toggleSelectAll = () => {
-    if (selectedIds.length === paginatedDevices.length) {
-      setSelectedIds([]);
-    } else {
-      setSelectedIds(paginatedDevices.map(d => d.id));
-    }
-  };
 
   const toggleItemSelect = (id: number) => {
     setSelectedIds(prev => 
@@ -453,6 +502,81 @@ export default function DeviceManagement() {
           </button>
         </div>
 
+        {/* 3b. Grouping Controls */}
+        <div style={{ 
+          display: 'flex', 
+          gap: '10px', 
+          marginTop: '1rem',
+          padding: '4px',
+          background: 'rgba(255,255,255,0.02)',
+          borderRadius: '12px',
+          width: 'fit-content',
+          border: '1px solid rgba(255,255,255,0.05)'
+        }}>
+          <button 
+            onClick={() => setGroupBy('none')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              background: groupBy === 'none' ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+              color: groupBy === 'none' ? '#818cf8' : '#64748b',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <LayoutGrid size={16} />
+            <span>Danh sách phẳng</span>
+          </button>
+          
+          <button 
+            onClick={() => setGroupBy('unit')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              background: groupBy === 'unit' ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+              color: groupBy === 'unit' ? '#818cf8' : '#64748b',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <Building2 size={16} />
+            <span>Theo Đơn vị</span>
+          </button>
+
+          <button 
+            onClick={() => setGroupBy('channel')}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '8px',
+              background: groupBy === 'channel' ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+              color: groupBy === 'channel' ? '#818cf8' : '#64748b',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '0.85rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.2s'
+            }}
+          >
+            <RadioIcon size={16} />
+            <span>Theo Kênh</span>
+          </button>
+        </div>
+
         {selectedIds.length > 0 && (
           <div className="animate-fade-in" style={{ 
             marginTop: '1.5rem', 
@@ -495,239 +619,230 @@ export default function DeviceManagement() {
           <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{filteredDevices.length} thiết bị</span>
         </div>
 
-        <div className="glass-card" style={{ overflow: 'hidden' }}>
-          <div style={{
-            padding: '0.6rem 1.2rem',
-            background: 'rgba(255,255,255,0.01)',
-            display: 'flex',
-            color: '#475569',
-            fontSize: '0.7rem',
-            fontWeight: 800,
-            textTransform: 'uppercase',
-            letterSpacing: '1px',
-            borderBottom: '1px solid rgba(255,255,255,0.03)'
-          }}>
-            <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <input 
-                type="checkbox" 
-                checked={paginatedDevices.length > 0 && selectedIds.length === paginatedDevices.length}
-                onChange={toggleSelectAll}
-                style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-              />
-            </div>
-            <span style={{ flex: 2 }}>Tên thiết bị</span>
-            <span style={{ flex: 1 }}>Loại</span>
-            <span style={{ flex: 1 }}>Địa chỉ IP</span>
-            <span style={{ flex: 1 }}>Trạng thái</span>
-            <span style={{ width: '120px', textAlign: 'right' }}>Thao tác</span>
-          </div>
-
-          {loading && devices.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+        <div className="glass-card" style={{ overflow: 'hidden', background: 'transparent', border: 'none' }}>
+           {loading && devices.length === 0 ? (
+            <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
               <RefreshCw size={30} className="animate-spin" style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
               <p>Đang tải dữ liệu...</p>
             </div>
-          ) : filteredDevices.length === 0 ? (
-            <div style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+          ) : Object.keys(groupedData).length === 0 ? (
+            <div className="glass-card" style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
               <Smartphone size={40} style={{ opacity: 0.2, marginBottom: '0.8rem' }} />
               <p style={{ fontWeight: 500, fontSize: '0.9rem' }}>Không tìm thấy thiết bị nào.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {paginatedDevices.map((device) => (
+            Object.entries(groupedData).map(([groupName, groupDevices]) => (
+              <div key={groupName} className="animate-fade-in" style={{ marginBottom: '2rem' }}>
+                {/* Group Header */}
                 <div 
-                  key={device.id}
-                  className="table-row-hover"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    padding: '0.8rem 1.2rem',
-                    borderBottom: '1px solid rgba(255, 255, 255, 0.02)',
-                    transition: 'all 0.2s ease',
-                    background: selectedIds.includes(device.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent'
+                  onClick={() => toggleGroup(groupName)}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '12px', 
+                    padding: '12px 20px',
+                    background: 'rgba(255,255,255,0.03)',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    marginBottom: '10px',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    transition: 'all 0.2s'
                   }}
+                  onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                  onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
                 >
-                  <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={selectedIds.includes(device.id)}
-                      onChange={() => toggleItemSelect(device.id)}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                  </div>
-                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <div style={{ 
-                      width: '40px', 
-                      height: '40px', 
-                      borderRadius: '10px', 
-                      background: 'rgba(255,255,255,0.03)', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      border: '1px solid rgba(255,255,255,0.05)'
-                    }}>
-                      {device.type === 'terminal' ? <Smartphone size={20} color="#6366f1" /> : <Speaker size={20} color="#94a3b8" />}
-                    </div>
-                    <div>
-                      <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9' }}>{device.name}</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '0.75rem', color: '#64748b' }}>Hệ thống: {device.unit_name || 'Mặc định'}</p>
-                    </div>
-                  </div>
-
-                  <div style={{ flex: 1 }}>
+                  {expandedGroups.includes(groupName) ? <ChevronDown size={18} color="#94a3b8" /> : <ChevronUp size={18} color="#94a3b8" />}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {groupBy === 'unit' && <Building2 size={18} color="#818cf8" />}
+                    {groupBy === 'channel' && <RadioIcon size={18} color="#818cf8" />}
+                    <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#f1f5f9' }}>{groupName}</span>
                     <span style={{ 
                       fontSize: '0.75rem', 
-                      background: 'rgba(255,255,255,0.05)', 
-                      padding: '4px 10px', 
-                      borderRadius: '20px',
-                      color: '#cbd5e1'
+                      background: 'rgba(99, 102, 241, 0.15)', 
+                      padding: '2px 8px', 
+                      borderRadius: '10px', 
+                      color: '#818cf8',
+                      fontWeight: 700
                     }}>
-                      {device.type === 'terminal' ? 'Trung tâm' : 'Đầu cuối (Loa)'}
+                      {groupDevices.length} thiết bị
                     </span>
                   </div>
-
-                  <div style={{ flex: 1, fontFamily: 'monospace', color: '#94a3b8', fontSize: '0.85rem' }}>
-                    {device.ip_address || '---.---.---.---'}
-                  </div>
-
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: getStatusColor(device.status) }} />
-                    <span style={{ fontSize: '0.9rem', color: '#cbd5e1', textTransform: 'capitalize' }}>{device.status}</span>
-                  </div>
-
-                  <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                    <button 
-                      onClick={() => openEditModal(device)}
-                      className="btn-icon-hover" 
-                      title="Chỉnh sửa" 
-                      style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}
-                    >
-                      <Edit3 size={18} />
-                    </button>
-                    <button 
-                      onClick={() => openDeleteModal(device)}
-                      className="btn-icon-hover" 
-                      title="Xóa" 
-                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                    <button className="btn-icon-hover" title="Xem thêm" style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}>
-                      <MoreHorizontal size={18} />
-                    </button>
-                  </div>
                 </div>
-              ))}
-            </div>
+
+                {expandedGroups.includes(groupName) && (
+                  <div className="glass-card" style={{ overflow: 'hidden' }}>
+                    {/* Sub-header for Table labels (optional, show only if expanded) */}
+                    <div style={{
+                      padding: '0.6rem 1.2rem',
+                      background: 'rgba(255,255,255,0.01)',
+                      display: 'flex',
+                      color: '#475569',
+                      fontSize: '0.7rem',
+                      fontWeight: 800,
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px',
+                      borderBottom: '1px solid rgba(255,255,255,0.03)'
+                    }}>
+                      <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={groupDevices.every(d => selectedIds.includes(d.id))}
+                          onChange={() => {
+                            const allSelected = groupDevices.every(d => selectedIds.includes(d.id));
+                            if (allSelected) {
+                              setSelectedIds(prev => prev.filter(id => !groupDevices.some(gd => gd.id === id)));
+                            } else {
+                              setSelectedIds(prev => [...new Set([...prev, ...groupDevices.map(gd => gd.id)])]);
+                            }
+                          }}
+                          style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                        />
+                      </div>
+                      <span style={{ width: '60px' }}>ID</span>
+                      <span style={{ flex: 1.5 }}>Tên thiết bị</span>
+                      <span style={{ flex: 1 }}>Kênh</span>
+                      <span style={{ flex: 0.8 }}>Địa chỉ IP</span>
+                      <span style={{ flex: 0.8 }}>Trạng thái</span>
+                      <span style={{ width: '120px', textAlign: 'right' }}>Thao tác</span>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {groupDevices.map((device) => (
+                        <div 
+                          key={device.id}
+                          className="table-row-hover"
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            padding: '0.8rem 1.2rem',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.02)',
+                            transition: 'all 0.2s ease',
+                            background: selectedIds.includes(device.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent'
+                          }}
+                        >
+                          <div style={{ width: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedIds.includes(device.id)}
+                              onChange={() => toggleItemSelect(device.id)}
+                              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                            />
+                          </div>
+                          <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
+                            #{device.id}
+                          </div>
+                          <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <div style={{ 
+                              width: '36px', 
+                              height: '36px', 
+                              borderRadius: '8px', 
+                              background: 'rgba(255,255,255,0.03)', 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'center',
+                              border: '1px solid rgba(255,255,255,0.05)'
+                            }}>
+                              {device.type === 'terminal' ? <Smartphone size={18} color="#6366f1" /> : <Speaker size={18} color="#94a3b8" />}
+                            </div>
+                            <div>
+                              <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9', fontSize: '0.9rem' }}>{device.name}</p>
+                              {groupBy !== 'unit' && <p style={{ margin: '2px 0 0 0', fontSize: '0.7rem', color: '#64748b' }}>{device.unit_name || 'Đơn vị mặc định'}</p>}
+                            </div>
+                          </div>
+
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <RadioIcon size={12} color={device.channel_id ? "#818cf8" : "#475569"} />
+                              <span style={{ 
+                                fontSize: '0.8rem', 
+                                color: device.channel_id ? '#818cf8' : '#475569',
+                                fontWeight: device.channel_id ? 700 : 400
+                              }}>
+                                {device.channel_name || 'Chưa gán'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div style={{ flex: 0.8, fontFamily: 'monospace', color: '#94a3b8', fontSize: '0.8rem' }}>
+                            {device.ip_address || '---.---.---.---'}
+                          </div>
+
+                          <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: getStatusColor(device.status) }} />
+                            <span style={{ fontSize: '0.8rem', color: '#cbd5e1', textTransform: 'capitalize' }}>{device.status}</span>
+                          </div>
+
+                          <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
+                            <button 
+                              onClick={() => openDeleteModal(device)}
+                              className="btn-icon-hover" 
+                              title="Xóa" 
+                              style={{ background: 'rgba(239, 68, 68, 0.05)', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                            
+                            <div className="action-menu-container" style={{ position: 'relative' }}>
+                              <button 
+                                onClick={() => setMenuOpenId(menuOpenId === device.id ? null : device.id)}
+                                className="btn-icon-hover" 
+                                title="Thao tác khác" 
+                                style={{ 
+                                  background: menuOpenId === device.id ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)', 
+                                  border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', borderRadius: '6px' 
+                                }}
+                              >
+                                <MoreVertical size={16} />
+                              </button>
+                              
+                              {menuOpenId === device.id && (
+                                <div style={{
+                                  position: 'absolute',
+                                  right: 0,
+                                  top: '100%',
+                                  zIndex: 100,
+                                  minWidth: '140px',
+                                  background: '#0f172a',
+                                  border: '1px solid rgba(255,255,255,0.1)',
+                                  borderRadius: '10px',
+                                  padding: '4px',
+                                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
+                                  marginTop: '6px'
+                                }}>
+                                  <button
+                                    style={{ 
+                                      width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '6px', 
+                                      display: 'flex', alignItems: 'center', gap: '8px', color: '#818cf8', 
+                                      background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem'
+                                    }}
+                                    onClick={() => { openEditModal(device); setMenuOpenId(null); }}
+                                  >
+                                    <Edit3 size={14} /> Chỉnh sửa
+                                  </button>
+                                  <button
+                                    style={{ 
+                                      width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '6px', 
+                                      display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', 
+                                      background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem'
+                                    }}
+                                    onClick={() => { setMenuOpenId(null); }}
+                                  >
+                                    <Activity size={14} /> Kiểm tra
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
           )}
         </div>
 
-        {/* Pagination UI */}
-        {totalPages > 1 && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            marginTop: '2rem',
-            gap: '12px'
-          }}>
-            <button
-              disabled={currentPage === 1}
-              onClick={() => handlePageChange(currentPage - 1)}
-              style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                color: currentPage === 1 ? '#475569' : '#cbd5e1',
-                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => {
-                if (currentPage !== 1) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.color = 'white';
-                }
-              }}
-              onMouseOut={(e) => {
-                if (currentPage !== 1) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                  e.currentTarget.style.color = '#cbd5e1';
-                }
-              }}
-            >
-              <ChevronLeft size={20} />
-            </button>
-
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => handlePageChange(page)}
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    borderRadius: '10px',
-                    background: currentPage === page ? '#6366f1' : 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid rgba(255, 255, 255, 0.05)',
-                    color: 'white',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseOver={(e) => {
-                    if (currentPage !== page) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                    }
-                  }}
-                  onMouseOut={(e) => {
-                    if (currentPage !== page) {
-                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                    }
-                  }}
-                >
-                  {page}
-                </button>
-              ))}
-            </div>
-
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => handlePageChange(currentPage + 1)}
-              style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.05)',
-                color: currentPage === totalPages ? '#475569' : '#cbd5e1',
-                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s'
-              }}
-              onMouseOver={(e) => {
-                if (currentPage !== totalPages) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                  e.currentTarget.style.color = 'white';
-                }
-              }}
-              onMouseOut={(e) => {
-                if (currentPage !== totalPages) {
-                  e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                  e.currentTarget.style.color = '#cbd5e1';
-                }
-              }}
-            >
-              <ChevronRight size={20} />
-            </button>
-          </div>
-        )}
       </section>
 
       {/* CRUD Modals */}
@@ -855,6 +970,21 @@ export default function DeviceManagement() {
                         <option value="">-- Chọn đơn vị --</option>
                         {units.map(unit => (
                           <option key={unit.id} value={unit.id}>{unit.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.6rem' }}>Kênh kết nối (Phát sóng)</label>
+                      <select 
+                        required
+                        value={formData.channel_id}
+                        onChange={e => setFormData({ ...formData, channel_id: e.target.value })}
+                        style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#818cf8', fontWeight: 700, outline: 'none' }}
+                      >
+                        <option value="" style={{ color: '#94a3b8' }}>-- Chọn kênh phát --</option>
+                        {channels.map(ch => (
+                          <option key={ch.id} value={ch.id} style={{ color: 'black' }}>{ch.name}</option>
                         ))}
                       </select>
                     </div>

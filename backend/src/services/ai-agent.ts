@@ -20,29 +20,91 @@ export class AIAgentService {
       const content = rows[0];
       const body = content.body;
 
-      // 2. Simulate AI Processing
-      const summary = `Bản tin về "${content.title.substring(0, 30)}..." đã được rà soát tự động. Nội dung tập trung vào các vấn đề quân sự và tuyên truyền.`;
+      // 2. AI Processing (Summarize + Policy Check)
+      const summary = await this.summarizeContent(body);
+      const policyResult = await this.analyzeContentPolicy(body);
       const score = Math.floor(Math.random() * 21) + 80; // Score 80-100
-      const isSensitive = body.toLowerCase().includes('bí mật') || body.toLowerCase().includes('khẩn');
-      const tags = ['AI_Reviewed', content.title.includes('Lễ') ? 'Sự kiện' : 'Thông tin'];
+      const isSensitive = policyResult.hasViolations || body.toLowerCase().includes('bí mật') || body.toLowerCase().includes('khẩn');
+      
+      const tags = ['AI_Reviewed'];
+      if (content.title.includes('Lễ')) tags.push('Sự kiện');
+      if (policyResult.sentiment === 'positive') tags.push('Tích cực');
 
       // 3. Update Content Item
       await client.query(
         'UPDATE content_items SET summary = $1, tags = $2, status = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
-        [summary, tags, 'approved', contentId]
+        [summary, tags, 'pending_review', contentId]
       );
 
       // 4. Record Review
       await client.query(
         `INSERT INTO content_reviews (content_id, reviewer_type, score, comments, is_sensitive) 
          VALUES ($1, $2, $3, $4, $5)`,
-        [contentId, 'ai', score, 'Nội dung phù hợp với tiêu chuẩn phát thanh quân sự.', isSensitive]
+        [contentId, 'ai', score, policyResult.feedback || 'Nội dung phù hợp với tiêu chuẩn phát thanh quân sự.', isSensitive]
       );
 
-      return { summary, score, tags, isSensitive };
+      // 5. Create Notification
+      await client.query(
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          'Bản tin mới chờ duyệt', 
+          'Bạn có 1 bản tin mới chờ duyệt.',
+          isSensitive ? 'warning' : 'info',
+          'ai',
+          'Hệ thống AI',
+          isSensitive ? 'high' : 'medium'
+        ]
+      );
+
+      return { summary, score, tags, isSensitive, policyFeedback: policyResult.feedback };
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Generates a concise summary using simulated AI logic.
+   */
+  async summarizeContent(text: string) {
+    if (!text) return '';
+    const lines = text.split('\n').filter(l => l.trim().length > 20);
+    if (lines.length <= 1) return text.substring(0, 150) + (text.length > 150 ? '...' : '');
+    
+    // Simulate smart summarization by picking key sentences or generating a lead
+    return `Tóm tắt: ${lines[0].substring(0, 100)}... Bản tin tập trung vào nội dung triển khai kế hoạch đơn vị và các lưu ý quan trọng về kỷ luật.`;
+  }
+
+  /**
+   * Analyzes content for policy compliance and sentiment.
+   */
+  async analyzeContentPolicy(text: string) {
+    const forbiddenWords = ['tệ nạn', 'cờ bạc', 'rượu chè', 'bỏ ngũ', 'vắng mặt trái phép'];
+    const slangWords = ['vcl', 'đcm', 'cl', 'vl'];
+    
+    const highlightedWords: string[] = [];
+    const lowerText = text.toLowerCase();
+    
+    for (const word of forbiddenWords) {
+      if (lowerText.includes(word)) highlightedWords.push(word);
+    }
+    
+    for (const word of slangWords) {
+      if (lowerText.includes(word)) highlightedWords.push(word);
+    }
+
+    const uniqueViolations = Array.from(new Set(highlightedWords));
+    const hasViolations = uniqueViolations.length > 0;
+    const sentiment = text.length > 500 ? 'neutral' : (text.includes('Chúc mừng') ? 'positive' : 'neutral');
+
+    return {
+      hasViolations,
+      violations: uniqueViolations,
+      sentiment,
+      feedback: hasViolations 
+        ? `Lưu ý: Phát hiện ${uniqueViolations.length} nhóm từ ngữ cần sửa đổi (đã được đánh dấu) để phù hợp với quy phạm quân chính.`
+        : 'Nội dung đảm bảo tính chính quy, phù hợp với môi trường quân đội.'
+    };
   }
 
   /**
@@ -90,6 +152,20 @@ export class AIAgentService {
         `INSERT INTO ai_suggestions (content_id, suggestion_type, suggested_text, is_applied) 
          VALUES ($1, $2, $3, $4) RETURNING id`,
         [contentId, 'schedule_optimization', suggestedText, false]
+      );
+
+      // 5. Create Notification for Suggestion
+      await client.query(
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          'Đề xuất lịch phát sóng', 
+          `Hệ thống AI vừa đề xuất lịch phát sóng tối ưu cho bản tin "${content.title}".`,
+          'info',
+          'ai',
+          'Trợ lý AI',
+          'medium'
+        ]
       );
 
       return { 

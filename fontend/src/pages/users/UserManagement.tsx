@@ -17,10 +17,11 @@ import {
   ShieldCheck,
   Lock,
   Mail,
-  AlertTriangle
+  AlertTriangle,
+  MoreVertical
 } from 'lucide-react';
 
-const API_URL = 'http://127.0.0.1:3000';
+const API_URL = `http://${window.location.hostname}:3000`;
 
 interface StaffUser {
   id: number;
@@ -62,6 +63,7 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'list' | 'pending'>('list');
+  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
 
   // CRUD States
   const [showModal, setShowModal] = useState<'add' | 'edit' | null>(null);
@@ -95,14 +97,20 @@ export default function UserManagement() {
 
   const fetchData = async () => {
     setLoading(true);
+    setError(null);
     try {
+      const headers = getHeaders();
       const [usersRes, regRes, unitsRes, rolesRes] = await Promise.all([
-        fetch(`${API_URL}/users`, { headers: getHeaders() }),
-        fetch(`${API_URL}/users/registrations`, { headers: getHeaders() }),
-        fetch(`${API_URL}/users/units`, { headers: getHeaders() }),
-        fetch(`${API_URL}/users/roles`, { headers: getHeaders() })
+        fetch(`${API_URL}/users`, { headers }),
+        fetch(`${API_URL}/users/registrations`, { headers }),
+        fetch(`${API_URL}/users/units`, { headers }),
+        fetch(`${API_URL}/users/roles`, { headers })
       ]);
       
+      if (usersRes.status === 401 || usersRes.status === 403) {
+        throw new Error('Bạn không có quyền truy cập dữ liệu này hoặc phiên làm việc đã hết hạn.');
+      }
+
       const usersData = await usersRes.json();
       const regData = await regRes.json();
       const unitsData = await unitsRes.json();
@@ -112,8 +120,13 @@ export default function UserManagement() {
       setRegistrations(Array.isArray(regData) ? regData : []);
       setUnits(Array.isArray(unitsData) ? unitsData : []);
       setRoles(Array.isArray(rolesData) ? rolesData : []);
-    } catch (error) {
-      console.error('Error fetching staff data:', error);
+      
+      if (!Array.isArray(usersData) && usersData.error) {
+        setError(usersData.error);
+      }
+    } catch (err: any) {
+      console.error('Error fetching staff data:', err);
+      setError(err.message || 'Lỗi kết nối đến máy chủ. Vui lòng thử lại sau.');
       setUsers([]);
       setRegistrations([]);
     } finally {
@@ -129,6 +142,17 @@ export default function UserManagement() {
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, view]);
+
+  // Handle outside click for action menu
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.action-menu-container')) {
+        setMenuOpenId(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleApprove = async (id: number, roleId: number = 5) => {
     try {
@@ -302,7 +326,7 @@ export default function UserManagement() {
 
   const filteredUsers = users.filter(u => 
     u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.unit_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -568,6 +592,7 @@ export default function UserManagement() {
                 style={{ cursor: 'pointer', width: '16px', height: '16px' }}
               />
             </div>
+            <span style={{ width: '60px' }}>ID</span>
             <span style={{ flex: 2 }}>{view === 'list' ? 'Họ tên & Cấp bậc' : 'Thông tin đăng ký'}</span>
             <span style={{ flex: 1.5 }}>Đơn vị</span>
             <span style={{ flex: 1 }}>{view === 'list' ? 'Chức vụ (Vai trò)' : 'Trạng thái'}</span>
@@ -579,6 +604,12 @@ export default function UserManagement() {
             <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
               <RefreshCw size={32} className="animate-spin" style={{ margin: '0 auto 1rem', opacity: 0.3 }} />
               <p>Đang tải dữ liệu...</p>
+            </div>
+          ) : error ? (
+            <div style={{ padding: '4rem', textAlign: 'center' }}>
+              <AlertTriangle size={48} color="#ef4444" style={{ opacity: 0.5, marginBottom: '1rem' }} />
+              <p style={{ color: '#ef4444', fontWeight: 600 }}>{error}</p>
+              <button onClick={fetchData} className="btn-secondary" style={{ marginTop: '1rem' }}>Thử lại</button>
             </div>
           ) : activeData.length === 0 ? (
             <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
@@ -603,6 +634,9 @@ export default function UserManagement() {
                       onChange={() => toggleItemSelect(item.id)}
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                     />
+                  </div>
+                  <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
+                    #{item.id}
                   </div>
                   <div style={{ flex: 2, display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ 
@@ -652,20 +686,65 @@ export default function UserManagement() {
 
                   <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                     {view === 'list' ? (
-                      <>
-                        <button 
-                          onClick={() => openEditModal(item)}
-                          className="icon-btn-hover" style={{ background: 'none', border: 'none', color: '#64748b', padding: '8px', cursor: 'pointer', borderRadius: '8px' }}>
-                          <Edit3 size={18} />
-                        </button>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
                         <button 
                           onClick={() => handleDelete(item.id)}
-                          className="icon-btn-hover" 
-                          style={{ background: 'none', border: 'none', color: '#ef4444', padding: '8px', cursor: 'pointer', borderRadius: '8px' }}
+                          className="btn-icon-hover" 
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', padding: '8px', cursor: 'pointer', borderRadius: '8px' }}
                         >
                           <Trash2 size={18} />
                         </button>
-                      </>
+                        
+                        <div className="action-menu-container" style={{ position: 'relative' }}>
+                          <button 
+                            onClick={() => setMenuOpenId(menuOpenId === item.id ? null : item.id)}
+                            className="btn-icon-hover" 
+                            style={{ 
+                              background: menuOpenId === item.id ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.05)', 
+                              border: 'none', color: '#94a3b8', padding: '8px', cursor: 'pointer', borderRadius: '8px' 
+                            }}
+                          >
+                            <MoreVertical size={18} />
+                          </button>
+                          
+                          {menuOpenId === item.id && (
+                            <div style={{
+                              position: 'absolute',
+                              right: 0,
+                              top: '100%',
+                              zIndex: 100,
+                              minWidth: '150px',
+                              background: '#1e293b',
+                              border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '12px',
+                              padding: '6px',
+                              boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
+                              marginTop: '8px'
+                            }}>
+                              <button
+                                style={{ 
+                                  width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', 
+                                  display: 'flex', alignItems: 'center', gap: '10px', color: '#818cf8', 
+                                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
+                                }}
+                                onClick={() => { openEditModal(item); setMenuOpenId(null); }}
+                              >
+                                <Edit3 size={16} /> Chỉnh sửa
+                              </button>
+                              <button
+                                style={{ 
+                                  width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', 
+                                  display: 'flex', alignItems: 'center', gap: '10px', color: '#94a3b8', 
+                                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
+                                }}
+                                onClick={() => { setMenuOpenId(null); }}
+                              >
+                                <Lock size={16} /> Đổi mật khẩu
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <select 

@@ -22,6 +22,8 @@ import fastifyWebsocket from '@fastify/websocket';
 import socketRoutes from './routes/socket.js';
 import profileRoutes from './routes/profile.js';
 import analyticsRoutes from './routes/analytics.js';
+import reportRoutes from './routes/reports.js';
+import { startScheduler } from './scheduler.js';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -77,15 +79,29 @@ async function setupServer() {
       }
     });
 
-    // RBAC: Check if user has specific roles
-    server.decorate("authorize", (allowedRoles: string[]) => {
+    // RBAC: Check if user has specific roles and optionally filter by Unit
+    server.decorate("authorize", (allowedRoles: string[], options?: { checkUnit?: boolean }) => {
       return async (request: any, reply: any) => {
         const user = request.user;
+        
+        // 1. Basic Role Check
         if (!user || !allowedRoles.includes(user.role_name)) {
           return reply.code(403).send({ 
             error: 'Forbidden', 
             message: 'Bạn không có quyền thực hiện hành động này.' 
           });
+        }
+
+        // 2. Optional Unit Check (Bypass for admin)
+        if (options?.checkUnit && user.role_name !== 'admin') {
+          const targetUnitId = request.params.unitId || request.query.unitId || request.body.unit_id;
+          
+          if (targetUnitId && parseInt(targetUnitId) !== user.unit_id) {
+            return reply.code(403).send({ 
+              error: 'Forbidden', 
+              message: 'Bạn chỉ có quyền quản lý trong đơn vị của mình.' 
+            });
+          }
         }
       };
     });
@@ -105,6 +121,7 @@ async function setupServer() {
     await server.register(dashboardRoutes, { prefix: '/dashboard' });
     await server.register(dictionaryRoutes, { prefix: '/dictionary' });
     await server.register(analyticsRoutes, { prefix: '/analytics' });
+    await server.register(reportRoutes, { prefix: '/reports' });
     await server.register(profileRoutes, { prefix: '/profile' });
 
     // Root route
@@ -120,6 +137,9 @@ async function setupServer() {
     server.get('/health', async () => {
       return { status: 'healthy', timestamp: new Date().toISOString() };
     });
+
+    // Start the auto-scheduler (checks for pending broadcasts every 30s)
+    await startScheduler(server);
 
     return server;
 }

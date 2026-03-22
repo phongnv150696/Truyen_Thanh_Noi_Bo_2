@@ -7,7 +7,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance, options:
     const client = await fastify.pg.connect();
     try {
       // Aggregate data from multiple tables
-      let deviceStats, mediaStats, userStats, broadcastHistory, scheduleProposals;
+      let deviceStats, mediaStats, userStats, broadcastHistory, scheduleProposals, pendingContentCount;
       
       try {
         const res = await client.query('SELECT COUNT(*) as total, COUNT(status) FILTER (WHERE status = $1) as online FROM devices', ['online']);
@@ -61,7 +61,15 @@ export default async function dashboardRoutes(fastify: FastifyInstance, options:
       }
 
       try {
-        // Proposals - assuming any schedule that isn't processed yet or just a placeholder count
+        const res = await client.query('SELECT COUNT(*) as count FROM content_items WHERE status = $1', ['pending_review']);
+        pendingContentCount = res.rows[0].count;
+      } catch (err) {
+        fastify.log.error(err as any);
+        throw err;
+      }
+
+      try {
+        // Proposals - Let's make this reflect total pending actions (content + users)
         const res = await client.query('SELECT COUNT(*) as count FROM broadcast_schedules');
         scheduleProposals = res.rows[0];
       } catch (err) {
@@ -82,6 +90,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance, options:
           total: parseInt(userStats.total || '0'),
           pending: parseInt(userStats.pending || '0')
         },
+        pending_content: parseInt(pendingContentCount || '0'),
         history: broadcastHistory,
         proposals: parseInt(scheduleProposals.count || '0')
       };

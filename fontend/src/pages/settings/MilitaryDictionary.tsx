@@ -57,7 +57,7 @@ export default function MilitaryDictionary() {
   const fetchEntries = async () => {
     try {
       setLoading(true)
-      const res = await fetch('http://127.0.0.1:3000/dictionary', {
+      const res = await fetch(`http://${window.location.hostname}:3000/dictionary`, {
         headers: getHeaders()
       })
       const data = await res.json()
@@ -91,8 +91,8 @@ export default function MilitaryDictionary() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const url = editingEntry 
-      ? `http://127.0.0.1:3000/dictionary/${editingEntry.id}` 
-      : 'http://127.0.0.1:3000/dictionary'
+      ? `http://${window.location.hostname}:3000/dictionary/${editingEntry.id}` 
+      : `http://${window.location.hostname}:3000/dictionary`
     const method = editingEntry ? 'PUT' : 'POST'
 
     try {
@@ -114,7 +114,7 @@ export default function MilitaryDictionary() {
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc chắn muốn xóa từ này khỏi từ điển?')) return
     try {
-      const res = await fetch(`http://127.0.0.1:3000/dictionary/${id}`, { 
+      const res = await fetch(`http://${window.location.hostname}:3000/dictionary/${id}`, { 
         method: 'DELETE',
         headers: getHeaders()
       })

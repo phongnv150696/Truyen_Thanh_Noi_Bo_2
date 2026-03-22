@@ -38,7 +38,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
     try {
       const { rows } = await server.pg.query(
-        'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.username = $1',
+        'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, u.unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.username = $1',
         [username]
       );
 
@@ -67,7 +67,8 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         username: user.username,
         full_name: user.full_name,
         rank: user.rank,
-        role_name: user.role_name
+        role_name: user.role_name,
+        unit_id: user.unit_id
       }, { expiresIn: '1d' });
 
       return { 
@@ -78,7 +79,8 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
           username: user.username,
           full_name: user.full_name,
           rank: user.rank,
-          role_name: user.role_name
+          role_name: user.role_name,
+          unit_id: user.unit_id
         }
       };
     } catch (error: any) {
@@ -117,6 +119,20 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         [username, password_hash, full_name || '', email || '', rank || '', 'pending']
       );
 
+      // Notify Admin about new registration
+      await server.pg.query(
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          'Đăng ký tài khoản mới',
+          `Người dùng "${full_name || username}" đang chờ phê duyệt tài khoản.`,
+          'info',
+          'users',
+          'Hệ thống Auth',
+          'high'
+        ]
+      );
+
       log(`User registration pending approval: ${username}`);
 
       return reply.code(201).send({
@@ -126,5 +142,10 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
       log(`Error during registration: ${error.message}`);
       return reply.code(500).send({ error: 'Lỗi hệ thống khi đăng ký' });
     }
+  });
+
+  // 10. Verify token and return user info
+  server.get('/verify', { preHandler: [server.authenticate] }, async (request: any, reply) => {
+    return { user: request.user };
   });
 }

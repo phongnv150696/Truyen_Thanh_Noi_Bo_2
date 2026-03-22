@@ -1,0 +1,547 @@
+[2026-03-15T03:34:38.235Z] --- Login Request Received ---
+[2026-03-15T03:34:38.238Z] Attempting login for: "admin"
+[2026-03-15T03:34:38.281Z] User found: admin (ID: 1)
+[2026-03-15T03:34:38.282Z] DB Password Hash: $2b$10$dsxYwZUFcCbT.NX7suWNHua3g74Gj24ULX6ChmDmDjffyMVCR.nZKa
+[2026-03-15T03:34:38.282Z] Password provided length: 13
+[2026-03-15T03:34:38.354Z] Bcrypt comparison result: false
+[2026-03-15T03:34:38.354Z] Authentication SUCCESS
+[2026-03-15T03:36:15.083Z] --- Login Request Received ---
+[2026-03-15T03:36:15.085Z] Attempting login for: "admin"
+[2026-03-15T03:36:15.130Z] User found: admin (ID: 1)
+[2026-03-15T03:36:15.131Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:36:15.132Z] Password provided length: 13
+[2026-03-15T03:36:15.206Z] Bcrypt comparison result: true
+[2026-03-15T03:36:15.207Z] Authentication SUCCESS
+[2026-03-15T03:39:12.256Z] --- Login Request Received ---
+[2026-03-15T03:39:12.258Z] Attempting login for: "admin"
+[2026-03-15T03:39:12.306Z] User found: admin (ID: 1)
+[2026-03-15T03:39:12.307Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:39:12.307Z] Password provided length: 13
+[2026-03-15T03:39:12.379Z] Bcrypt comparison result: true
+[2026-03-15T03:39:12.379Z] Authentication SUCCESS
+[2026-03-15T03:39:17.268Z] --- Login Request Received ---
+[2026-03-15T03:39:17.270Z] Attempting login for: "admin"
+[2026-03-15T03:39:17.282Z] User found: admin (ID: 1)
+[2026-03-15T03:39:17.283Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:39:17.284Z] Password provided length: 13
+[2026-03-15T03:39:17.360Z] Bcrypt comparison result: true
+[2026-03-15T03:39:17.360Z] Authentication SUCCESS
+[2026-03-15T03:41:34.146Z] --- Login Request Received ---
+[2026-03-15T03:41:34.148Z] Attempting login for: "admin"
+[2026-03-15T03:41:34.195Z] User found: admin (ID: 1)
+[2026-03-15T03:41:34.195Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:41:34.196Z] Password provided length: 13
+[2026-03-15T03:41:34.266Z] Bcrypt comparison result: true
+[2026-03-15T03:41:34.267Z] Authentication SUCCESS
+[2026-03-15T03:45:59.129Z] --- Login Request Received ---
+[2026-03-15T03:45:59.130Z] Attempting login for: "admin"
+[2026-03-15T03:45:59.314Z] User found: admin (ID: 1)
+[2026-03-15T03:45:59.316Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:45:59.318Z] Password provided length: 13
+[2026-03-15T03:45:59.412Z] Bcrypt comparison result: true
+[2026-03-15T03:45:59.413Z] Authentication SUCCESS
+[2026-03-15T03:54:07.653Z] --- Login Request Received ---
+[2026-03-15T03:54:07.654Z] Attempting login for: "admin"
+[2026-03-15T03:54:07.684Z] User found: admin (ID: 1)
+[2026-03-15T03:54:07.684Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:54:07.685Z] Password provided length: 13
+[2026-03-15T03:54:07.755Z] Bcrypt comparison result: true
+[2026-03-15T03:54:07.756Z] Authentication SUCCESS
+[2026-03-15T03:54:13.651Z] --- Login Request Received ---
+[2026-03-15T03:54:13.653Z] Attempting login for: "admin"
+[2026-03-15T03:54:13.662Z] User found: admin (ID: 1)
+[2026-03-15T03:54:13.663Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:54:13.664Z] Password provided length: 13
+[2026-03-15T03:54:13.739Z] Bcrypt comparison result: true
+[2026-03-15T03:54:13.740Z] Authentication SUCCESS
+[2026-03-15T03:55:23.836Z] --- Login Request Received ---
+[2026-03-15T03:55:23.838Z] Attempting login for: "admin"
+[2026-03-15T03:55:23.877Z] User found: admin (ID: 1)
+[2026-03-15T03:55:23.878Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T03:55:23.879Z] Password provided length: 13
+[2026-03-15T03:55:23.950Z] Bcrypt comparison result: true
+[2026-03-15T03:55:23.951Z] Authentication SUCCESS
+[2026-03-15T07:08:17.843Z] --- Login Request Received ---
+[2026-03-15T07:08:17.845Z] Attempting login for: "admin"
+[2026-03-15T07:08:17.895Z] User found: admin (ID: 1)
+[2026-03-15T07:08:17.898Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:08:17.900Z] Password provided length: 13
+[2026-03-15T07:08:17.961Z] Bcrypt comparison result: true
+[2026-03-15T07:08:17.961Z] Authentication SUCCESS
+[2026-03-15T07:16:09.906Z] --- Login Request Received ---
+[2026-03-15T07:16:09.907Z] Attempting login for: "admin"
+[2026-03-15T07:16:09.933Z] User found: admin (ID: 1)
+[2026-03-15T07:16:09.933Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:16:09.934Z] Password provided length: 13
+[2026-03-15T07:16:09.993Z] Bcrypt comparison result: true
+[2026-03-15T07:16:09.993Z] Authentication SUCCESS
+[2026-03-15T07:25:55.271Z] --- Login Request Received ---
+[2026-03-15T07:25:55.272Z] Attempting login for: "admin"
+[2026-03-15T07:25:55.301Z] User found: admin (ID: 1)
+[2026-03-15T07:25:55.302Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:25:55.303Z] Password provided length: 13
+[2026-03-15T07:25:55.361Z] Bcrypt comparison result: true
+[2026-03-15T07:25:55.361Z] Authentication SUCCESS
+[2026-03-15T07:32:16.029Z] --- Login Request Received ---
+[2026-03-15T07:32:16.030Z] Attempting login for: "admin"
+[2026-03-15T07:32:16.058Z] User found: admin (ID: 1)
+[2026-03-15T07:32:16.059Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:32:16.059Z] Password provided length: 13
+[2026-03-15T07:32:16.117Z] Bcrypt comparison result: true
+[2026-03-15T07:32:16.118Z] Authentication SUCCESS
+[2026-03-15T07:43:12.055Z] --- Login Request Received ---
+[2026-03-15T07:43:12.056Z] Attempting login for: "admin"
+[2026-03-15T07:43:12.087Z] User found: admin (ID: 1)
+[2026-03-15T07:43:12.088Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:43:12.088Z] Password provided length: 13
+[2026-03-15T07:43:12.148Z] Bcrypt comparison result: true
+[2026-03-15T07:43:12.149Z] Authentication SUCCESS
+[2026-03-15T07:48:58.734Z] --- Login Request Received ---
+[2026-03-15T07:48:58.735Z] Attempting login for: "admin"
+[2026-03-15T07:48:58.764Z] User found: admin (ID: 1)
+[2026-03-15T07:48:58.764Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:48:58.765Z] Password provided length: 13
+[2026-03-15T07:48:58.823Z] Bcrypt comparison result: true
+[2026-03-15T07:48:58.824Z] Authentication SUCCESS
+[2026-03-15T07:49:07.238Z] --- Login Request Received ---
+[2026-03-15T07:49:07.239Z] Attempting login for: "admin"
+[2026-03-15T07:49:07.243Z] User found: admin (ID: 1)
+[2026-03-15T07:49:07.244Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T07:49:07.244Z] Password provided length: 13
+[2026-03-15T07:49:07.303Z] Bcrypt comparison result: true
+[2026-03-15T07:49:07.304Z] Authentication SUCCESS
+[2026-03-15T08:10:50.217Z] --- Login Request Received ---
+[2026-03-15T08:10:50.221Z] Attempting login for: "admin"
+[2026-03-15T08:10:50.277Z] User found: admin (ID: 1)
+[2026-03-15T08:10:50.278Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:10:50.279Z] Password provided length: 13
+[2026-03-15T08:10:50.343Z] Bcrypt comparison result: true
+[2026-03-15T08:10:50.343Z] Authentication SUCCESS
+[2026-03-15T08:10:54.222Z] --- Login Request Received ---
+[2026-03-15T08:10:54.223Z] Attempting login for: "admin"
+[2026-03-15T08:10:54.228Z] User found: admin (ID: 1)
+[2026-03-15T08:10:54.229Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:10:54.230Z] Password provided length: 13
+[2026-03-15T08:10:54.291Z] Bcrypt comparison result: true
+[2026-03-15T08:10:54.291Z] Authentication SUCCESS
+[2026-03-15T08:12:43.992Z] --- Login Request Received ---
+[2026-03-15T08:12:43.993Z] Attempting login for: "admin"
+[2026-03-15T08:12:44.031Z] User found: admin (ID: 1)
+[2026-03-15T08:12:44.032Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:12:44.033Z] Password provided length: 13
+[2026-03-15T08:12:44.095Z] Bcrypt comparison result: true
+[2026-03-15T08:12:44.097Z] Authentication SUCCESS
+[2026-03-15T08:13:38.185Z] --- Login Request Received ---
+[2026-03-15T08:13:38.186Z] Attempting login for: "admin"
+[2026-03-15T08:13:38.216Z] User found: admin (ID: 1)
+[2026-03-15T08:13:38.217Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:13:38.217Z] Password provided length: 13
+[2026-03-15T08:13:38.277Z] Bcrypt comparison result: true
+[2026-03-15T08:13:38.278Z] Authentication SUCCESS
+[2026-03-15T08:13:41.255Z] --- Login Request Received ---
+[2026-03-15T08:13:41.256Z] Attempting login for: "admin"
+[2026-03-15T08:13:41.261Z] User found: admin (ID: 1)
+[2026-03-15T08:13:41.262Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:13:41.262Z] Password provided length: 13
+[2026-03-15T08:13:41.322Z] Bcrypt comparison result: true
+[2026-03-15T08:13:41.322Z] Authentication SUCCESS
+[2026-03-15T08:13:44.561Z] --- Login Request Received ---
+[2026-03-15T08:13:44.562Z] Attempting login for: "admin"
+[2026-03-15T08:13:44.566Z] User found: admin (ID: 1)
+[2026-03-15T08:13:44.567Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:13:44.568Z] Password provided length: 13
+[2026-03-15T08:13:44.629Z] Bcrypt comparison result: true
+[2026-03-15T08:13:44.630Z] Authentication SUCCESS
+[2026-03-15T08:22:08.141Z] --- Login Request Received ---
+[2026-03-15T08:22:08.143Z] Attempting login for: "admin"
+[2026-03-15T08:22:08.180Z] User found: admin (ID: 1)
+[2026-03-15T08:22:08.181Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:22:08.181Z] Password provided length: 13
+[2026-03-15T08:22:08.248Z] Bcrypt comparison result: true
+[2026-03-15T08:22:08.249Z] Authentication SUCCESS
+[2026-03-15T08:50:54.059Z] --- Login Request Received ---
+[2026-03-15T08:50:54.060Z] Attempting login for: "admin"
+[2026-03-15T08:50:54.100Z] User found: admin (ID: 1)
+[2026-03-15T08:50:54.101Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T08:50:54.102Z] Password provided length: 13
+[2026-03-15T08:50:54.170Z] Bcrypt comparison result: true
+[2026-03-15T08:50:54.171Z] Authentication SUCCESS
+[2026-03-15T09:57:57.620Z] --- Login Request Received ---
+[2026-03-15T09:57:57.621Z] Attempting login for: "admin"
+[2026-03-15T09:57:57.698Z] User found: admin (ID: 1)
+[2026-03-15T09:57:57.699Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T09:57:57.700Z] Password provided length: 13
+[2026-03-15T09:57:57.761Z] Bcrypt comparison result: true
+[2026-03-15T09:57:57.762Z] Authentication SUCCESS
+[2026-03-15T09:57:57.763Z] Error during login: Cannot read properties of undefined (reading 'sign')
+[2026-03-15T09:59:05.954Z] --- Login Request Received ---
+[2026-03-15T09:59:05.955Z] Attempting login for: "admin"
+[2026-03-15T09:59:06.008Z] User found: admin (ID: 1)
+[2026-03-15T09:59:06.010Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T09:59:06.011Z] Password provided length: 13
+[2026-03-15T09:59:06.079Z] Bcrypt comparison result: true
+[2026-03-15T09:59:06.080Z] Authentication SUCCESS
+[2026-03-15T09:59:06.080Z] Error during login: Cannot read properties of undefined (reading 'sign')
+[2026-03-15T10:05:50.584Z] --- Login Request Received ---
+[2026-03-15T10:05:50.587Z] Attempting login for: "admin"
+[2026-03-15T10:05:50.637Z] User found: admin (ID: 1)
+[2026-03-15T10:05:50.638Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-15T10:05:50.639Z] Password provided length: 13
+[2026-03-15T10:05:50.714Z] Bcrypt comparison result: true
+[2026-03-15T10:05:50.715Z] Authentication SUCCESS
+[2026-03-16T03:36:31.932Z] --- Register Request Received ---
+[2026-03-16T03:36:32.034Z] User registration pending approval: user_v2_1773632191878
+[2026-03-16T03:37:03.967Z] --- Register Request Received ---
+[2026-03-16T03:37:04.052Z] User registration pending approval: user_v2_1773632223904
+[2026-03-17T10:41:50.854Z] --- Login Request Received ---
+[2026-03-17T10:41:50.857Z] Attempting login for: "admin"
+[2026-03-17T10:41:50.865Z] User found: admin (ID: 1)
+[2026-03-17T10:41:50.866Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-17T10:41:50.867Z] Password provided length: 13
+[2026-03-17T10:41:50.943Z] Bcrypt comparison result: true
+[2026-03-17T10:41:50.944Z] Authentication SUCCESS
+[2026-03-17T12:41:07.991Z] --- Login Request Received ---
+[2026-03-17T12:41:07.995Z] Attempting login for: "admin"
+[2026-03-17T12:41:08.062Z] User found: admin (ID: 1)
+[2026-03-17T12:41:08.062Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-17T12:41:08.063Z] Password provided length: 13
+[2026-03-17T12:41:08.123Z] Bcrypt comparison result: true
+[2026-03-17T12:41:08.123Z] Authentication SUCCESS
+[2026-03-17T12:52:13.820Z] --- Login Request Received ---
+[2026-03-17T12:52:13.824Z] Attempting login for: "admin"
+[2026-03-17T12:52:13.830Z] User found: admin (ID: 1)
+[2026-03-17T12:52:13.832Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-17T12:52:13.833Z] Password provided length: 13
+[2026-03-17T12:52:13.895Z] Bcrypt comparison result: true
+[2026-03-17T12:52:13.895Z] Authentication SUCCESS
+[2026-03-17T13:02:14.398Z] --- Login Request Received ---
+[2026-03-17T13:02:14.400Z] Attempting login for: "admin"
+[2026-03-17T13:02:14.432Z] User found: admin (ID: 1)
+[2026-03-17T13:02:14.433Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-17T13:02:14.434Z] Password provided length: 13
+[2026-03-17T13:02:14.494Z] Bcrypt comparison result: true
+[2026-03-17T13:02:14.494Z] Authentication SUCCESS
+[2026-03-17T14:46:01.744Z] --- Login Request Received ---
+[2026-03-17T14:46:01.746Z] Attempting login for: "admin"
+[2026-03-17T14:46:01.794Z] User found: admin (ID: 1)
+[2026-03-17T14:46:01.795Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-17T14:46:01.796Z] Password provided length: 13
+[2026-03-17T14:46:01.859Z] Bcrypt comparison result: true
+[2026-03-17T14:46:01.860Z] Authentication SUCCESS
+[2026-03-18T09:16:46.259Z] --- Login Request Received ---
+[2026-03-18T09:16:46.269Z] Attempting login for: "admin"
+[2026-03-18T09:16:46.304Z] User found: admin (ID: 1)
+[2026-03-18T09:16:46.305Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T09:16:46.306Z] Password provided length: 13
+[2026-03-18T09:16:46.383Z] Bcrypt comparison result: true
+[2026-03-18T09:16:46.384Z] Authentication SUCCESS
+[2026-03-18T09:17:13.908Z] --- Login Request Received ---
+[2026-03-18T09:17:13.910Z] Attempting login for: "Namai"
+[2026-03-18T09:17:14.007Z] User found: Namai (ID: 22)
+[2026-03-18T09:17:14.008Z] DB Password Hash: $2b$10$/O7.6vzSDrgZgckLaiviXuPXd4/PXg9I8Mb9PriyUxWwncmK08wJ2
+[2026-03-18T09:17:14.009Z] Password provided length: 7
+[2026-03-18T09:17:14.086Z] Bcrypt comparison result: true
+[2026-03-18T09:17:14.087Z] Authentication SUCCESS
+[2026-03-18T09:17:34.238Z] --- Login Request Received ---
+[2026-03-18T09:17:34.240Z] Attempting login for: "admin"
+[2026-03-18T09:17:34.418Z] User found: admin (ID: 1)
+[2026-03-18T09:17:34.420Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T09:17:34.421Z] Password provided length: 13
+[2026-03-18T09:17:34.543Z] Bcrypt comparison result: true
+[2026-03-18T09:17:34.544Z] Authentication SUCCESS
+[2026-03-18T12:19:26.592Z] --- Login Request Received ---
+[2026-03-18T12:19:26.597Z] Attempting login for: "Namai"
+[2026-03-18T12:19:26.623Z] User found: Namai (ID: 22)
+[2026-03-18T12:19:26.624Z] DB Password Hash: $2b$10$/O7.6vzSDrgZgckLaiviXuPXd4/PXg9I8Mb9PriyUxWwncmK08wJ2
+[2026-03-18T12:19:26.624Z] Password provided length: 7
+[2026-03-18T12:19:26.695Z] Bcrypt comparison result: true
+[2026-03-18T12:19:26.696Z] Authentication SUCCESS
+[2026-03-18T12:19:57.130Z] --- Login Request Received ---
+[2026-03-18T12:19:57.131Z] Attempting login for: "admin"
+[2026-03-18T12:19:57.139Z] User found: admin (ID: 1)
+[2026-03-18T12:19:57.140Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T12:19:57.141Z] Password provided length: 13
+[2026-03-18T12:19:57.221Z] Bcrypt comparison result: true
+[2026-03-18T12:19:57.221Z] Authentication SUCCESS
+[2026-03-18T12:21:01.929Z] --- Login Request Received ---
+[2026-03-18T12:21:01.930Z] Attempting login for: "duoc"
+[2026-03-18T12:21:01.959Z] User found: duoc (ID: 7)
+[2026-03-18T12:21:01.959Z] DB Password Hash: $2b$10$9MVtR8CD4gtEBcEW0lr0V.HA2qX367wljH9gLBUa2B67M/ZJqz0SS
+[2026-03-18T12:21:01.960Z] Password provided length: 7
+[2026-03-18T12:21:02.031Z] Bcrypt comparison result: true
+[2026-03-18T12:21:02.031Z] Authentication SUCCESS
+[2026-03-18T12:21:27.288Z] --- Login Request Received ---
+[2026-03-18T12:21:27.290Z] Attempting login for: "admin"
+[2026-03-18T12:21:27.297Z] User found: admin (ID: 1)
+[2026-03-18T12:21:27.298Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T12:21:27.300Z] Password provided length: 13
+[2026-03-18T12:21:27.382Z] Bcrypt comparison result: true
+[2026-03-18T12:21:27.383Z] Authentication SUCCESS
+[2026-03-18T12:26:51.203Z] --- Register Request Received ---
+[2026-03-18T12:26:51.206Z] Invalid registration input
+[2026-03-18T12:26:55.539Z] --- Register Request Received ---
+[2026-03-18T12:26:55.541Z] Invalid registration input
+[2026-03-18T12:27:05.407Z] --- Register Request Received ---
+[2026-03-18T12:27:05.410Z] Invalid registration input
+[2026-03-18T12:27:09.490Z] --- Login Request Received ---
+[2026-03-18T12:27:09.492Z] Attempting login for: "admin"
+[2026-03-18T12:27:09.624Z] User found: admin (ID: 1)
+[2026-03-18T12:27:09.625Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T12:27:09.626Z] Password provided length: 13
+[2026-03-18T12:27:09.787Z] Bcrypt comparison result: true
+[2026-03-18T12:27:09.789Z] Authentication SUCCESS
+[2026-03-18T12:28:00.265Z] --- Login Request Received ---
+[2026-03-18T12:28:00.266Z] Attempting login for: "admin"
+[2026-03-18T12:28:00.301Z] User found: admin (ID: 1)
+[2026-03-18T12:28:00.302Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-18T12:28:00.303Z] Password provided length: 13
+[2026-03-18T12:28:00.379Z] Bcrypt comparison result: true
+[2026-03-18T12:28:00.380Z] Authentication SUCCESS
+[2026-03-19T12:57:42.185Z] --- Login Request Received ---
+[2026-03-19T12:57:42.239Z] Attempting login for: ""
+[2026-03-19T12:57:42.272Z] User NOT FOUND in database: ""
+[2026-03-19T12:57:50.662Z] --- Login Request Received ---
+[2026-03-19T12:57:50.687Z] Attempting login for: ""
+[2026-03-19T12:57:50.703Z] User NOT FOUND in database: ""
+[2026-03-19T12:58:50.460Z] --- Register Request Received ---
+[2026-03-19T12:58:50.497Z] Invalid registration input
+[2026-03-19T12:59:16.398Z] --- Login Request Received ---
+[2026-03-19T12:59:16.399Z] Attempting login for: ""
+[2026-03-19T12:59:16.412Z] User NOT FOUND in database: ""
+[2026-03-19T12:59:37.891Z] --- Register Request Received ---
+[2026-03-19T12:59:37.915Z] Invalid registration input
+[2026-03-19T13:00:02.784Z] --- Login Request Received ---
+[2026-03-19T13:00:02.788Z] Attempting login for: "admin"
+[2026-03-19T13:00:02.806Z] User found: admin (ID: 1)
+[2026-03-19T13:00:02.810Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-19T13:00:02.811Z] Password provided length: 0
+[2026-03-19T13:00:02.963Z] Bcrypt comparison result: false
+[2026-03-19T13:00:02.968Z] Authentication FAILED: Password mismatch
+[2026-03-19T13:39:36.394Z] --- Login Request Received ---
+[2026-03-19T13:39:36.399Z] Attempting login for: "admin"
+[2026-03-19T13:39:36.408Z] User found: admin (ID: 1)
+[2026-03-19T13:39:36.409Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-19T13:39:36.410Z] Password provided length: 13
+[2026-03-19T13:39:36.506Z] Bcrypt comparison result: true
+[2026-03-19T13:39:36.507Z] Authentication SUCCESS
+[2026-03-20T13:40:50.567Z] --- Login Request Received ---
+[2026-03-20T13:40:50.576Z] Attempting login for: "admin"
+[2026-03-20T13:40:50.583Z] User found: admin (ID: 1)
+[2026-03-20T13:40:50.585Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-20T13:40:50.587Z] Password provided length: 13
+[2026-03-20T13:40:50.670Z] Bcrypt comparison result: true
+[2026-03-20T13:40:50.671Z] Authentication SUCCESS
+[2026-03-20T13:43:39.803Z] --- Login Request Received ---
+[2026-03-20T13:43:39.806Z] Attempting login for: "duoc1"
+[2026-03-20T13:43:39.815Z] User found: duoc1 (ID: 23)
+[2026-03-20T13:43:39.816Z] DB Password Hash: $2b$10$13TMHyGzU8SbLM3fi.zUx.Me5XIlKkShzn6egSvomnMMm7ST6uTdO
+[2026-03-20T13:43:39.818Z] Password provided length: 4
+[2026-03-20T13:43:39.892Z] Bcrypt comparison result: true
+[2026-03-20T13:43:39.893Z] Authentication SUCCESS
+[2026-03-20T13:44:00.285Z] --- Login Request Received ---
+[2026-03-20T13:44:00.288Z] Attempting login for: "duoc2"
+[2026-03-20T13:44:00.299Z] User found: duoc2 (ID: 24)
+[2026-03-20T13:44:00.301Z] DB Password Hash: $2b$10$UIdLx4G2ieDn80yaje.24ux9Cw.iJRJZqRrTmrRfF2.c.o28l6QV2
+[2026-03-20T13:44:00.302Z] Password provided length: 4
+[2026-03-20T13:44:00.379Z] Bcrypt comparison result: true
+[2026-03-20T13:44:00.380Z] Authentication SUCCESS
+[2026-03-20T13:44:11.094Z] --- Login Request Received ---
+[2026-03-20T13:44:11.097Z] Attempting login for: "duoc3"
+[2026-03-20T13:44:11.138Z] User found: duoc3 (ID: 25)
+[2026-03-20T13:44:11.138Z] DB Password Hash: $2b$10$ZpKzNnfTqVt9J8WPitJRFejv0xGZZX/2EhXkLS/P1crJGjy9Rb5ma
+[2026-03-20T13:44:11.139Z] Password provided length: 4
+[2026-03-20T13:44:11.209Z] Bcrypt comparison result: true
+[2026-03-20T13:44:11.210Z] Authentication SUCCESS
+[2026-03-20T13:44:31.247Z] --- Login Request Received ---
+[2026-03-20T13:44:31.250Z] Attempting login for: "duoc4"
+[2026-03-20T13:44:31.328Z] User found: duoc4 (ID: 26)
+[2026-03-20T13:44:31.328Z] DB Password Hash: $2b$10$T8UQBlD.wB.CnR/NMuidferHXfV3o/wz1xngRd2YKKzGLXG6PKQAy
+[2026-03-20T13:44:31.329Z] Password provided length: 4
+[2026-03-20T13:44:31.399Z] Bcrypt comparison result: true
+[2026-03-20T13:44:31.399Z] Authentication SUCCESS
+[2026-03-20T13:45:45.138Z] --- Login Request Received ---
+[2026-03-20T13:45:45.141Z] Attempting login for: "admin"
+[2026-03-20T13:45:45.158Z] User found: admin (ID: 1)
+[2026-03-20T13:45:45.161Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-20T13:45:45.164Z] Password provided length: 13
+[2026-03-20T13:45:45.276Z] Bcrypt comparison result: true
+[2026-03-20T13:45:45.277Z] Authentication SUCCESS
+[2026-03-20T13:46:54.143Z] --- Login Request Received ---
+[2026-03-20T13:46:54.145Z] Attempting login for: "duoc4"
+[2026-03-20T13:46:54.158Z] User found: duoc4 (ID: 26)
+[2026-03-20T13:46:54.159Z] DB Password Hash: $2b$10$T8UQBlD.wB.CnR/NMuidferHXfV3o/wz1xngRd2YKKzGLXG6PKQAy
+[2026-03-20T13:46:54.160Z] Password provided length: 4
+[2026-03-20T13:46:54.236Z] Bcrypt comparison result: true
+[2026-03-20T13:46:54.236Z] Authentication SUCCESS
+[2026-03-20T13:47:19.881Z] --- Login Request Received ---
+[2026-03-20T13:47:19.885Z] Attempting login for: "admin"
+[2026-03-20T13:47:19.900Z] User found: admin (ID: 1)
+[2026-03-20T13:47:19.902Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-20T13:47:19.904Z] Password provided length: 13
+[2026-03-20T13:47:19.982Z] Bcrypt comparison result: true
+[2026-03-20T13:47:19.983Z] Authentication SUCCESS
+[2026-03-20T13:47:37.186Z] --- Login Request Received ---
+[2026-03-20T13:47:37.189Z] Attempting login for: "duoc3"
+[2026-03-20T13:47:37.231Z] User found: duoc3 (ID: 25)
+[2026-03-20T13:47:37.231Z] DB Password Hash: $2b$10$ZpKzNnfTqVt9J8WPitJRFejv0xGZZX/2EhXkLS/P1crJGjy9Rb5ma
+[2026-03-20T13:47:37.232Z] Password provided length: 4
+[2026-03-20T13:47:37.305Z] Bcrypt comparison result: true
+[2026-03-20T13:47:37.306Z] Authentication SUCCESS
+[2026-03-20T13:49:49.594Z] --- Login Request Received ---
+[2026-03-20T13:49:49.595Z] Attempting login for: "admin"
+[2026-03-20T13:49:49.602Z] User found: admin (ID: 1)
+[2026-03-20T13:49:49.603Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-20T13:49:49.604Z] Password provided length: 13
+[2026-03-20T13:49:49.688Z] Bcrypt comparison result: true
+[2026-03-20T13:49:49.689Z] Authentication SUCCESS
+[2026-03-21T02:39:25.993Z] --- Login Request Received ---
+[2026-03-21T02:39:26.004Z] Attempting login for: "admin"
+[2026-03-21T02:39:26.033Z] User found: admin (ID: 1)
+[2026-03-21T02:39:26.035Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-21T02:39:26.037Z] Password provided length: 0
+[2026-03-21T02:39:26.195Z] Bcrypt comparison result: false
+[2026-03-21T02:39:26.206Z] Authentication FAILED: Password mismatch
+[2026-03-21T02:39:57.706Z] --- Login Request Received ---
+[2026-03-21T02:39:57.708Z] Attempting login for: "admin"
+[2026-03-21T02:39:57.719Z] User found: admin (ID: 1)
+[2026-03-21T02:39:57.726Z] DB Password Hash: $2b$10$bDUkiqUj1h0P3r8H5aW9vuT9qyacYuRlZALMInWKzMBK0B3GGeSom
+[2026-03-21T02:39:57.729Z] Password provided length: 6
+[2026-03-21T02:39:57.847Z] Bcrypt comparison result: false
+[2026-03-21T02:39:57.852Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:04:05.833Z] --- Login Request Received ---
+[2026-03-21T09:04:05.839Z] Attempting login for: "adminadmin"
+[2026-03-21T09:04:06.014Z] User NOT FOUND in database: "adminadmin"
+[2026-03-21T09:04:14.709Z] --- Login Request Received ---
+[2026-03-21T09:04:14.712Z] Attempting login for: "adminadmin"
+[2026-03-21T09:04:14.736Z] User NOT FOUND in database: "adminadmin"
+[2026-03-21T09:04:22.307Z] --- Login Request Received ---
+[2026-03-21T09:04:22.314Z] Attempting login for: "adminadmin"
+[2026-03-21T09:04:22.326Z] User NOT FOUND in database: "adminadmin"
+[2026-03-21T09:04:28.392Z] --- Login Request Received ---
+[2026-03-21T09:04:28.394Z] Attempting login for: "adminadmin"
+[2026-03-21T09:04:28.404Z] User NOT FOUND in database: "adminadmin"
+[2026-03-21T09:04:36.026Z] --- Login Request Received ---
+[2026-03-21T09:04:36.030Z] Attempting login for: "adminadmin"
+[2026-03-21T09:04:36.047Z] User NOT FOUND in database: "adminadmin"
+[2026-03-21T09:10:49.521Z] --- Login Request Received ---
+[2026-03-21T09:10:49.522Z] Attempting login for: "admin"
+[2026-03-21T09:10:49.528Z] User found: admin (ID: 1)
+[2026-03-21T09:10:49.529Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:10:49.530Z] Password provided length: 5
+[2026-03-21T09:10:49.597Z] Bcrypt comparison result: true
+[2026-03-21T09:10:49.598Z] Authentication SUCCESS
+[2026-03-21T09:17:41.514Z] --- Login Request Received ---
+[2026-03-21T09:17:41.516Z] Attempting login for: "admin"
+[2026-03-21T09:17:41.573Z] User found: admin (ID: 1)
+[2026-03-21T09:17:41.574Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:17:41.575Z] Password provided length: 5
+[2026-03-21T09:17:41.647Z] Bcrypt comparison result: false
+[2026-03-21T09:17:41.650Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:17:56.514Z] --- Login Request Received ---
+[2026-03-21T09:17:56.521Z] Attempting login for: "admin"
+[2026-03-21T09:17:56.624Z] User found: admin (ID: 1)
+[2026-03-21T09:17:56.628Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:17:56.633Z] Password provided length: 5
+[2026-03-21T09:17:56.721Z] Bcrypt comparison result: false
+[2026-03-21T09:17:56.723Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:18:01.385Z] --- Login Request Received ---
+[2026-03-21T09:18:01.398Z] Attempting login for: "admin"
+[2026-03-21T09:18:01.416Z] User found: admin (ID: 1)
+[2026-03-21T09:18:01.420Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:18:01.421Z] Password provided length: 8
+[2026-03-21T09:18:01.528Z] Bcrypt comparison result: false
+[2026-03-21T09:18:01.531Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:18:02.700Z] --- Login Request Received ---
+[2026-03-21T09:18:02.706Z] Attempting login for: "admin"
+[2026-03-21T09:18:02.724Z] User found: admin (ID: 1)
+[2026-03-21T09:18:02.726Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:18:02.730Z] Password provided length: 8
+[2026-03-21T09:18:02.830Z] Bcrypt comparison result: false
+[2026-03-21T09:18:02.831Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:18:19.272Z] --- Login Request Received ---
+[2026-03-21T09:18:19.273Z] Attempting login for: "admin"
+[2026-03-21T09:18:19.278Z] User found: admin (ID: 1)
+[2026-03-21T09:18:19.279Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:18:19.280Z] Password provided length: 4
+[2026-03-21T09:18:19.339Z] Bcrypt comparison result: false
+[2026-03-21T09:18:19.339Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:18:23.986Z] --- Login Request Received ---
+[2026-03-21T09:18:23.987Z] Attempting login for: "admin"
+[2026-03-21T09:18:23.991Z] User found: admin (ID: 1)
+[2026-03-21T09:18:23.992Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:18:23.993Z] Password provided length: 4
+[2026-03-21T09:18:24.055Z] Bcrypt comparison result: false
+[2026-03-21T09:18:24.056Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:18:26.433Z] --- Login Request Received ---
+[2026-03-21T09:18:26.433Z] Attempting login for: "admin"
+[2026-03-21T09:18:26.437Z] User found: admin (ID: 1)
+[2026-03-21T09:18:26.438Z] DB Password Hash: $2b$10$JBhd1ltSEMpyQ3R.dwtbwelVyPx9TkcM854FUSw7xbFxhcS2GqUgO
+[2026-03-21T09:18:26.439Z] Password provided length: 7
+[2026-03-21T09:18:26.499Z] Bcrypt comparison result: false
+[2026-03-21T09:18:26.499Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:25:16.743Z] --- Login Request Received ---
+[2026-03-21T09:25:16.749Z] Attempting login for: "admin"
+[2026-03-21T09:25:16.842Z] User found: admin (ID: 1)
+[2026-03-21T09:25:16.847Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-21T09:25:16.848Z] Password provided length: 6
+[2026-03-21T09:25:16.986Z] Bcrypt comparison result: false
+[2026-03-21T09:25:16.992Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:27:35.406Z] --- Login Request Received ---
+[2026-03-21T09:27:35.432Z] Attempting login for: "admiadmin"
+[2026-03-21T09:27:35.524Z] User NOT FOUND in database: "admiadmin"
+[2026-03-21T09:28:10.365Z] --- Login Request Received ---
+[2026-03-21T09:28:10.368Z] Attempting login for: "admin"
+[2026-03-21T09:28:10.488Z] User found: admin (ID: 1)
+[2026-03-21T09:28:10.491Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-21T09:28:10.492Z] Password provided length: 4
+[2026-03-21T09:28:10.588Z] Bcrypt comparison result: false
+[2026-03-21T09:28:10.599Z] Authentication FAILED: Password mismatch
+[2026-03-21T09:29:45.846Z] --- Login Request Received ---
+[2026-03-21T09:29:45.847Z] Attempting login for: "admin"
+[2026-03-21T09:29:46.066Z] User found: admin (ID: 1)
+[2026-03-21T09:29:46.067Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-21T09:29:46.068Z] Password provided length: 7
+[2026-03-21T09:29:46.159Z] Bcrypt comparison result: true
+[2026-03-21T09:29:46.161Z] Authentication SUCCESS
+[2026-03-21T14:27:33.298Z] --- Login Request Received ---
+[2026-03-21T14:27:33.303Z] Attempting login for: "admin"
+[2026-03-21T14:27:33.312Z] User found: admin (ID: 1)
+[2026-03-21T14:27:33.313Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-21T14:27:33.314Z] Password provided length: 7
+[2026-03-21T14:27:33.415Z] Bcrypt comparison result: true
+[2026-03-21T14:27:33.416Z] Authentication SUCCESS
+[2026-03-22T08:09:32.741Z] --- Login Request Received ---
+[2026-03-22T08:09:32.745Z] Attempting login for: "duoc1"
+[2026-03-22T08:09:32.773Z] User found: duoc1 (ID: 23)
+[2026-03-22T08:09:32.774Z] DB Password Hash: $2b$10$13TMHyGzU8SbLM3fi.zUx.Me5XIlKkShzn6egSvomnMMm7ST6uTdO
+[2026-03-22T08:09:32.774Z] Password provided length: 4
+[2026-03-22T08:09:32.845Z] Bcrypt comparison result: true
+[2026-03-22T08:09:32.846Z] Authentication SUCCESS
+[2026-03-22T08:10:06.589Z] --- Login Request Received ---
+[2026-03-22T08:10:06.591Z] Attempting login for: "duoc2"
+[2026-03-22T08:10:06.626Z] User found: duoc2 (ID: 24)
+[2026-03-22T08:10:06.627Z] DB Password Hash: $2b$10$UIdLx4G2ieDn80yaje.24ux9Cw.iJRJZqRrTmrRfF2.c.o28l6QV2
+[2026-03-22T08:10:06.628Z] Password provided length: 4
+[2026-03-22T08:10:06.698Z] Bcrypt comparison result: true
+[2026-03-22T08:10:06.699Z] Authentication SUCCESS
+[2026-03-22T08:10:16.135Z] --- Login Request Received ---
+[2026-03-22T08:10:16.138Z] Attempting login for: "duoc3"
+[2026-03-22T08:10:16.149Z] User found: duoc3 (ID: 25)
+[2026-03-22T08:10:16.150Z] DB Password Hash: $2b$10$ZpKzNnfTqVt9J8WPitJRFejv0xGZZX/2EhXkLS/P1crJGjy9Rb5ma
+[2026-03-22T08:10:16.151Z] Password provided length: 4
+[2026-03-22T08:10:16.227Z] Bcrypt comparison result: true
+[2026-03-22T08:10:16.227Z] Authentication SUCCESS
+[2026-03-22T08:10:35.270Z] --- Login Request Received ---
+[2026-03-22T08:10:35.272Z] Attempting login for: "duoc4"
+[2026-03-22T08:10:35.281Z] User found: duoc4 (ID: 26)
+[2026-03-22T08:10:35.282Z] DB Password Hash: $2b$10$T8UQBlD.wB.CnR/NMuidferHXfV3o/wz1xngRd2YKKzGLXG6PKQAy
+[2026-03-22T08:10:35.283Z] Password provided length: 4
+[2026-03-22T08:10:35.358Z] Bcrypt comparison result: true
+[2026-03-22T08:10:35.359Z] Authentication SUCCESS
+[2026-03-22T08:19:48.860Z] --- Login Request Received ---
+[2026-03-22T08:19:48.863Z] Attempting login for: "admin"
+[2026-03-22T08:19:48.901Z] User found: admin (ID: 1)
+[2026-03-22T08:19:48.902Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-22T08:19:48.902Z] Password provided length: 7
+[2026-03-22T08:19:48.993Z] Bcrypt comparison result: true
+[2026-03-22T08:19:48.994Z] Authentication SUCCESS

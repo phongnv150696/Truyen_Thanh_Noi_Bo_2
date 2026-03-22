@@ -39,26 +39,45 @@ export default async function analyticsRoutes(fastify: FastifyInstance, options:
       `);
       
       const rawTrends = trendsRes.rows.reverse(); // old to new
-      
-      // If no data, provide dummy data for the chart to look good
-      const broadcastTrends = rawTrends.length > 0 ? rawTrends.map(row => ({
+      const broadcastTrends = rawTrends.map(row => ({
         date: new Date(row.date).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' }),
         broadcasts: parseInt(row.broadcasts)
-      })) : [
-        { date: '01/10', broadcasts: 5 },
-        { date: '02/10', broadcasts: 12 },
-        { date: '03/10', broadcasts: 8 },
-        { date: '04/10', broadcasts: 15 },
-        { date: '05/10', broadcasts: 20 },
-        { date: '06/10', broadcasts: 10 },
-        { date: '07/10', broadcasts: 25 },
-      ];
+      }));
+
+      // Top 10 Most Played Contents
+      const topContentsRes = await client.query(`
+        SELECT ci.title as name, COUNT(bs.id)::integer as value
+        FROM broadcast_sessions bs
+        JOIN content_items ci ON bs.content_id = ci.id
+        WHERE bs.status = 'completed'
+        GROUP BY ci.title
+        ORDER BY value DESC
+        LIMIT 10
+      `);
+      const topContents = topContentsRes.rows;
+
+      // Duration Trends (Daily total minutes)
+      const durationRes = await client.query(`
+        SELECT DATE(start_time) as date, SUM(duration/60)::integer as duration
+        FROM broadcast_sessions
+        WHERE status = 'completed'
+        GROUP BY DATE(start_time)
+        ORDER BY date DESC
+        LIMIT 7
+      `);
+      const rawDuration = durationRes.rows.reverse();
+      const durationTrends = rawDuration.map(row => ({
+        date: new Date(row.date).toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' }),
+        duration: row.duration
+      }));
 
       return {
         contentStats,
         deviceStatsByStatus,
         deviceStatsByType,
-        broadcastTrends
+        broadcastTrends,
+        topContents,
+        durationTrends
       };
     } catch (err: any) {
       fastify.log.error(err);
@@ -175,6 +194,145 @@ export default async function analyticsRoutes(fastify: FastifyInstance, options:
     } catch (err: any) {
       fastify.log.error(err);
       return reply.code(500).send({ error: 'Failed to generate export' });
+    } finally {
+      client.release();
+    }
+  });
+  
+  // 4. Detailed Broadcast History with Filters
+  fastify.get('/history', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const { startDate, endDate, channelId, status } = request.query as any;
+    const client = await fastify.pg.connect();
+    
+    try {
+      let query = `
+        SELECT 
+          bs.id,
+          bs.start_time,
+          bs.end_time,
+          bs.status,
+          c.name as channel_name,
+          ci.title as content_title,
+          EXTRACT(EPOCH FROM (bs.end_time - bs.start_time)) as duration
+        FROM broadcast_sessions bs
+        JOIN channels c ON bs.channel_id = c.id
+        LEFT JOIN content_items ci ON bs.content_id = ci.id
+        WHERE 1=1
+      `;
+      
+      const values: any[] = [];
+      let paramIdx = 1;
+      
+      if (startDate) {
+        query += ` AND bs.start_time >= $${paramIdx++}`;
+        values.push(startDate);
+      }
+      
+      if (endDate) {
+        // Add 1 day to include the full end date
+        query += ` AND bs.start_time <= $${paramIdx++}`;
+        values.push(endDate + ' 23:59:59');
+      }
+      
+      if (channelId && channelId !== 'all') {
+        query += ` AND bs.channel_id = $${paramIdx++}`;
+        values.push(channelId);
+      }
+      
+      if (status && status !== 'all') {
+        query += ` AND bs.status = $${paramIdx++}`;
+        values.push(status);
+      }
+      
+      query += ` ORDER BY bs.start_time DESC LIMIT 100`;
+      
+      const res = await client.query(query, values);
+      return res.rows;
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch broadcast history' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // 5. Get Channels for Filters
+  fastify.get('/channels', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const client = await fastify.pg.connect();
+    try {
+      const res = await client.query('SELECT id, name FROM channels ORDER BY name ASC');
+      return res.rows;
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to fetch channels' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // 6. Retry a failed broadcast session
+  fastify.post('/retry/:sessionId', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const { sessionId } = request.params as any;
+    const client = await fastify.pg.connect();
+    
+    try {
+      // 1. Get session info
+      const sessionRes = await client.query(`
+        SELECT 
+          bs.channel_id, 
+          bs.content_id, 
+          EXTRACT(EPOCH FROM (bs.end_time - bs.start_time)) as duration,
+          c.name as channel_name, c.mount_point,
+          ci.title as content_title,
+          mf.file_path
+        FROM broadcast_sessions bs
+        JOIN channels c ON bs.channel_id = c.id
+        LEFT JOIN content_items ci ON bs.content_id = ci.id
+        LEFT JOIN media_files mf ON ci.id = mf.content_id
+        WHERE bs.id = $1
+      `, [sessionId]);
+
+      if (sessionRes.rowCount === 0) {
+        return reply.code(404).send({ error: 'Session not found' });
+      }
+
+      const session = sessionRes.rows[0];
+
+      // 2. Create new immediate schedule
+      const scheduleRes = await client.query(`
+        INSERT INTO broadcast_schedules (channel_id, content_id, scheduled_time, duration, is_active)
+        VALUES ($1, $2, NOW(), $3, true)
+        RETURNING id
+      `, [session.channel_id, session.content_id, session.duration || 300]);
+
+      const newScheduleId = scheduleRes.rows[0].id;
+
+      // 3. Trigger broadcast via WebSocket (if available)
+      if (fastify.broadcast) {
+        fastify.broadcast({
+          type: 'broadcast-start',
+          schedule_id: newScheduleId,
+          title: session.content_title || 'Phát lại bản tin',
+          channel: session.channel_name,
+          mount_point: session.mount_point,
+          file_url: session.file_path ? `http://127.0.0.1:3000/uploads/${session.file_path}` : null,
+          user: (request.user as any)?.full_name || 'Admin'
+        });
+      }
+
+      // 4. Log to audit_logs
+      await client.query(`
+        INSERT INTO audit_logs (user_id, action, target_table, target_id, details)
+        VALUES ($1, 'BROADCAST_RETRY', 'broadcast_sessions', $2, $3)
+      `, [(request.user as any).id, sessionId, JSON.stringify({ new_schedule_id: newScheduleId })]);
+
+      return { 
+        message: 'Broadcast retry triggered successfully', 
+        new_schedule_id: newScheduleId 
+      };
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to retry broadcast' });
     } finally {
       client.release();
     }

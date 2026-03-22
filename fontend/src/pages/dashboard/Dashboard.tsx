@@ -38,6 +38,8 @@ import MilitaryDictionary from '../settings/MilitaryDictionary'
 import UserProfile from '../profile/UserProfile'
 import Analytics from './Analytics'
 import AuditLogs from '../settings/AuditLogs'
+import ChannelMonitor from '../devices/ChannelMonitor'
+import BroadcastHistory from '../reports/BroadcastHistory'
 
 interface Notification {
   id: number;
@@ -46,6 +48,8 @@ interface Notification {
   type: 'info' | 'warning' | 'success' | 'error';
   is_read: boolean;
   link?: string;
+  sender_name?: string;
+  priority?: 'low' | 'medium' | 'high';
   created_at: string;
 }
 
@@ -55,11 +59,13 @@ interface DashboardStats {
   users: { total: number; pending: number };
   history: any[];
   proposals: number;
+  pending_content: number;
 }
 
 export default function Dashboard({ user, onLogout }: { user: any, onLogout: () => void }) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<string>('overview')
+  const [auditLogInitialTab, setAuditLogInitialTab] = useState<'audit' | 'notifications'>('audit');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [isNotificationOpen, setIsNotificationOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -70,17 +76,36 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
   const [liveStream, setLiveStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const [activeBroadcast, setActiveBroadcast] = useState<{title: string, channel: string, user: string} | null>(null);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(false);
+  const [wsStatus, setWsStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
+  const isAudioEnabledRef = useRef(false);
+  const audioRef = useRef<HTMLAudioElement>(new Audio());
 
-  console.log('Dashboard rendering', { activeTab, hasStats: !!stats, user })
+  useEffect(() => {
+    isAudioEnabledRef.current = isAudioEnabled;
+    if (isAudioEnabled) {
+      console.log('Dashboard: Audio mode enabled (unlocked)');
+    }
+  }, [isAudioEnabled]);
+
+  console.log('Dashboard rendering', { activeTab, hasStats: !!stats, user, activeBroadcast })
 
   const dropdownRef = useRef<HTMLDivElement>(null)
   const notificationRef = useRef<HTMLDivElement>(null)
 
+  const getHeaders = () => {
+    const token = localStorage.getItem('openclaw_token')
+    return {
+      'Authorization': token ? `Bearer ${token}` : ''
+    }
+  }
+
   const fetchNotifications = async () => {
     try {
       const [notifsRes, countRes] = await Promise.all([
-        fetch('http://127.0.0.1:3000/notifications'),
-        fetch('http://127.0.0.1:3000/notifications/unread-count')
+        fetch(`http://${window.location.hostname}:3000/notifications`, { headers: getHeaders() }),
+        fetch(`http://${window.location.hostname}:3000/notifications/unread-count`, { headers: getHeaders() })
       ]);
       if (!notifsRes.ok || !countRes.ok) throw new Error('Failed to fetch notifications');
       const notifsData = await notifsRes.json();
@@ -94,10 +119,17 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
 
   const fetchStats = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:3000/dashboard/stats');
-      if (!res.ok) throw new Error('Failed to fetch stats');
+      const res = await fetch(`http://${window.location.hostname}:3000/dashboard/stats`, { headers: getHeaders() });
+      if (!res.ok) {
+        if (res.status === 401) {
+          console.warn('Dashboard: Session expired or invalid token');
+        }
+        throw new Error(`Failed to fetch stats: ${res.status}`);
+      }
       const data = await res.json();
-      setStats(data);
+      if (data && !data.error) {
+        setStats(data);
+      }
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
@@ -105,7 +137,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
 
   const fetchEmergencyStatus = async () => {
     try {
-      const res = await fetch('http://127.0.0.1:3000/schedules/emergency/status');
+      const res = await fetch(`http://${window.location.hostname}:3000/schedules/emergency/status`, { headers: getHeaders() });
       if (res.ok) {
         const data = await res.json();
         setIsEmergency(data.active);
@@ -127,25 +159,133 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
     return () => clearInterval(interval);
   }, [activeTab]);
 
-  const handleMarkAsRead = async (id: number) => {
-    try {
-      await fetch(`http://127.0.0.1:3000/notifications/${id}/read`, { method: 'PATCH' });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (error) {
-      console.error('Error marking as read:', error);
+  const handleNotificationClick = async (notif: Notification) => {
+    // 1. Mark as read if not already
+    if (!notif.is_read) {
+      try {
+        await fetch(`http://${window.location.hostname}:3000/notifications/${notif.id}/read`, { 
+          method: 'PATCH',
+          headers: getHeaders()
+        });
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      } catch (error) {
+        console.error('Error marking as read:', error);
+      }
+    }
+
+    // 2. Navigate if link exists
+    if (notif.link) {
+      setActiveTab(notif.link);
+      setIsNotificationOpen(false);
+      console.log(`Navigating to tab: ${notif.link}`);
     }
   };
 
   const handleMarkAllAsRead = async () => {
     try {
-      await fetch('http://127.0.0.1:3000/notifications/read-all', { method: 'PATCH' });
+      await fetch(`http://${window.location.hostname}:3000/notifications/read-all`, { 
+        method: 'PATCH',
+        headers: getHeaders()
+      });
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
       setUnreadCount(0);
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
   };
+
+  useEffect(() => {
+    const handleBroadcastStart = (data: any) => {
+      console.log('Dashboard: Received broadcast-start event', data);
+      setActiveBroadcast({ title: data.title, channel: data.channel, user: data.user });
+
+      if (!data.file_url) {
+        console.warn('Dashboard: No file_url in broadcast-start event');
+        return;
+      }
+
+      console.log('Dashboard: Setting audio src:', data.file_url);
+      audioRef.current.src = data.file_url;
+      audioRef.current.load();
+
+      // Always attempt to play — browser will allow it if user has interacted
+      audioRef.current.play().then(() => {
+        console.log('Dashboard: ✅ Playback started!');
+        // Mark audio as enabled since it worked
+        isAudioEnabledRef.current = true;
+        setIsAudioEnabled(true);
+      }).catch((err) => {
+        console.warn('Dashboard: Autoplay blocked, showing prompt:', err.message);
+        // Show a visible prompt to let user click play
+        setActiveBroadcast(prev => prev ? { ...prev, needsUnlock: true } as any : null);
+      });
+    };
+
+    const handleBroadcastStop = () => {
+      audioRef.current.pause();
+      audioRef.current.src = '';
+      setActiveBroadcast(null);
+    };
+
+    let statusWs: WebSocket | null = null;
+    let shouldReconnect = true;
+
+    const connectWS = () => {
+      if (!shouldReconnect) return;
+      
+      const wsUrl = `ws://127.0.0.1:3000/ws`;
+      console.log('Dashboard: Connecting to status WebSocket:', wsUrl);
+      statusWs = new WebSocket(wsUrl);
+
+      statusWs.onopen = () => {
+        console.log('Dashboard: WebSocket status connected');
+        setWsStatus('online');
+      };
+
+      statusWs.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'broadcast-start') {
+            handleBroadcastStart(data);
+          } else if (data.type === 'broadcast-stop' || data.type === 'emergency_status_change') {
+            if (data.type === 'emergency_status_change') setIsEmergency(data.active);
+            handleBroadcastStop();
+          }
+        } catch (err) {
+          console.error('Dashboard: WS parse error', err);
+        }
+      };
+
+      statusWs.onclose = (event) => {
+        if (shouldReconnect) {
+          console.warn('Dashboard: WebSocket disconnected, retrying in 3s...', event.code);
+          setWsStatus('offline');
+          setTimeout(connectWS, 3000);
+        } else {
+          console.log('Dashboard: WebSocket closed intentionally');
+        }
+      };
+
+      statusWs.onerror = (err) => {
+        console.error('Dashboard: WebSocket error', err);
+        setWsStatus('offline');
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      console.log('Dashboard: Cleaning up WebSocket effect');
+      shouldReconnect = false;
+      if (statusWs) {
+        statusWs.onclose = null; // Prevent onclose from firing during cleanup
+        statusWs.close();
+      }
+      audioRef.current.pause();
+      audioRef.current.src = '';
+    };
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -157,6 +297,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
+ 
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
       if (ws) ws.close();
@@ -184,7 +325,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
       const cleanStream = destination.stream;
       setLiveStream(currentStream);
 
-      const host = window.location.hostname || '127.0.0.1';
+      const host = window.location.hostname || 'localhost';
       const wsUrl = `ws://${host}:3000/ws`;
       console.log(`STEP 3: Connecting to ${wsUrl}`);
       currentWs = new WebSocket(wsUrl);
@@ -345,7 +486,75 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+          {/* WebSocket Status */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={`Kết nối máy chủ: ${wsStatus}`}>
+            <div style={{ 
+              width: '8px', 
+              height: '8px', 
+              borderRadius: '50%', 
+              background: wsStatus === 'online' ? '#10b981' : wsStatus === 'connecting' ? '#f59e0b' : '#ef4444',
+              boxShadow: wsStatus === 'online' ? '0 0 8px #10b981' : 'none'
+            }} />
+            <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>WS</span>
+          </div>
+
+          {/* Test Sound Button */}
+          <button 
+            onClick={() => {
+              const testAudio = new Audio('https://www.soundjay.com/buttons/beep-07a.mp3');
+              testAudio.play().catch(e => alert('Không thể phát âm thanh thử. Hãy kiểm tra cài đặt trình duyệt.'));
+            }}
+            style={{
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              color: '#94a3b8',
+              padding: '4px 10px',
+              borderRadius: '6px',
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              fontWeight: 600
+            }}
+          >
+            Thử loa
+          </button>
+
+          {/* Browser Speaker Toggle */}
+          <div 
+            onClick={() => {
+              if (!isAudioEnabled) {
+                // Unlock audio context by playing a tiny silent beep
+                audioRef.current.play().then(() => {
+                  audioRef.current.pause();
+                  setIsAudioEnabled(true);
+                }).catch(e => console.error("Unlock failed", e));
+              } else {
+                audioRef.current.pause();
+                setIsAudioEnabled(false);
+              }
+            }}
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px', 
+              cursor: 'pointer',
+              padding: '6px 12px',
+              borderRadius: '20px',
+              background: isAudioEnabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)',
+              border: `1px solid ${isAudioEnabled ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)'}`,
+              transition: 'all 0.3s'
+            }}
+            title={isAudioEnabled ? "Loa trình duyệt đang BẬT" : "Loa trình duyệt đang TẮT"}
+          >
+            <div style={{ position: 'relative' }}>
+              <Radio size={20} color={isAudioEnabled ? "#10b981" : "#64748b"} />
+              {isAudioEnabled && <div style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', background: '#10b981', borderRadius: '50%', border: '2px solid #000' }} className="animate-pulse" />}
+            </div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: isAudioEnabled ? '#10b981' : '#64748b' }}>
+              {isAudioEnabled ? 'LOA: BẬT' : 'LOA: TẮT'}
+            </span>
+          </div>
+
           <div style={{ position: 'relative' }} ref={notificationRef}>
             <div style={{ cursor: 'pointer' }} onClick={() => setIsNotificationOpen(!isNotificationOpen)}>
               <Bell size={24} color={unreadCount > 0 ? "#818cf8" : "#94a3b8"} />
@@ -376,18 +585,34 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                     </div>
                   ) : (
                     notifications.map(notif => (
-                      <div key={notif.id} className="dropdown-item"
-                        style={{ padding: '1.2rem 1.5rem', flexDirection: 'column', alignItems: 'flex-start', background: notif.is_read ? 'transparent' : 'rgba(99, 102, 241, 0.05)' }}
-                        onClick={() => !notif.is_read && handleMarkAsRead(notif.id)}>
+                      <div key={notif.id} className="dropdown-item notification-item"
+                        style={{ 
+                          padding: '1.2rem 1.5rem', 
+                          flexDirection: 'column', 
+                          alignItems: 'flex-start', 
+                          background: notif.is_read ? 'transparent' : 'rgba(99, 102, 241, 0.05)',
+                          borderLeft: notif.priority === 'high' ? '4px solid #ef4444' : 'none',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease'
+                        }}
+                        onClick={() => handleNotificationClick(notif)}>
                         <div style={{ display: 'flex', gap: '12px', width: '100%', marginBottom: '4px' }}>
                           <div style={{ marginTop: '2px' }}>{getNotifIcon(notif.type)}</div>
                           <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 700, fontSize: '0.9rem', color: notif.is_read ? '#94a3b8' : '#f8fafc' }}>{notif.title}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: notif.is_read ? '#94a3b8' : '#f8fafc' }}>{notif.title}</div>
+                              {notif.priority === 'high' && <span style={{ fontSize: '0.65rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '1px 6px', borderRadius: '4px', fontWeight: 800 }}>KHẨN</span>}
+                            </div>
                             <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '2px', lineHeight: 1.4 }}>{notif.message}</div>
+                            {notif.sender_name && (
+                              <div style={{ fontSize: '0.75rem', color: '#6366f1', marginTop: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <User size={12} /> {notif.sender_name}
+                              </div>
+                            )}
                           </div>
                           {!notif.is_read && <div style={{ width: '8px', height: '8px', background: '#6366f1', borderRadius: '50%', marginTop: '6px' }} />}
                         </div>
-                        <div style={{ fontSize: '0.7rem', color: '#475569', marginLeft: '30px' }}>
+                        <div style={{ fontSize: '0.7rem', color: '#475569', marginLeft: '30px', marginTop: '4px' }}>
                           {formatSafeTime(notif.created_at)} • {formatSafeDate(notif.created_at)}
                         </div>
                       </div>
@@ -395,7 +620,17 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                   )}
                 </div>
                 <div className="dropdown-divider" />
-                <div className="dropdown-item" style={{ justifyContent: 'center', color: '#6366f1', fontWeight: 700 }}>Xem tất cả hoạt động</div>
+                <div 
+                  className="dropdown-item" 
+                  style={{ justifyContent: 'center', color: '#6366f1', fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => { 
+                    setAuditLogInitialTab('notifications');
+                    setActiveTab('audit-logs'); 
+                    setIsNotificationOpen(false); 
+                  }}
+                >
+                  Xem tất cả hoạt động
+                </div>
               </div>
             )}
           </div>
@@ -438,35 +673,39 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
               <div className={`nav-item ${activeTab === 'audit-logs' ? 'active' : ''}`} onClick={() => setActiveTab('audit-logs')}><Database size={20} /><span>Nhật ký Hoạt động</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'technician') && (
+            {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
               <div className={`nav-item ${activeTab === 'schedule' ? 'active' : ''}`} onClick={() => setActiveTab('schedule')}><Calendar size={20} /><span>Quản Lý Lịch phát thanh</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'editor') && (
+            {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
               <div className={`nav-item ${activeTab === 'content' ? 'active' : ''}`} onClick={() => setActiveTab('content')}><BookOpen size={20} /><span>Quản Lý Bản tin</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'technician') && (
+            {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
               <div className={`nav-item ${activeTab === 'media' ? 'active' : ''}`} onClick={() => setActiveTab('media')}><Database size={20} /><span>Quản Lý Thư viện Media</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'technician') && (
-              <div className={`nav-item ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => setActiveTab('devices')}><Cpu size={20} /><span>Quản lý thiết bị</span></div>
+            {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
+              <div className={`nav-item ${activeTab === 'reports' ? 'active' : ''}`} onClick={() => setActiveTab('reports')}><Info size={20} /><span>Lịch sử & Báo cáo</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin') && (
+            {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
+              <div className={`nav-item ${activeTab === 'channel-monitor' ? 'active' : ''}`} onClick={() => setActiveTab('channel-monitor')}><Radio size={20} /><span>Giám sát Kênh</span></div>
+            )}
+
+            {(user?.role_name === 'admin') && (
               <div className={`nav-item ${activeTab === 'users' ? 'active' : ''}`} onClick={() => setActiveTab('users')}><Users size={20} /><span>Quản lý nhân sự</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'commander' || user?.role_name === 'editor') && (
-              <div className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}><Sparkles size={20} /><span>Kiểm duyệt AI</span></div>
+            {(user?.role_name === 'admin' || user?.role_name === 'commander' || user?.role_name === 'editor') && (
+              <div className={`nav-item ${activeTab === 'ai' ? 'active' : ''}`} onClick={() => setActiveTab('ai')}><Sparkles size={20} /><span>Kiểm duyệt & Phê duyệt</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin' || user?.role_name === 'editor') && (
+            {(user?.role_name === 'admin' || user?.role_name === 'editor') && (
               <div className={`nav-item ${activeTab === 'dictionary' ? 'active' : ''}`} onClick={() => setActiveTab('dictionary')}><Languages size={20} /><span>Từ điển Quân sự</span></div>
             )}
 
-            {(user?.role_name === 'admin' || user?.rank?.toLowerCase() === 'admin') && (
+            {(user?.role_name === 'admin') && (
               <div className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}><Settings size={20} /><span>Cấu hình hệ thống</span></div>
             )}
           </nav>
@@ -474,6 +713,57 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
         </aside>
 
         <main className="main-content">
+          {activeBroadcast && (
+            <div className="animate-slide-down" style={{ marginBottom: '2rem' }}>
+              <div className="action-card" style={{ 
+                background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(99, 102, 241, 0.1))',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2rem',
+                padding: '1rem 2rem',
+                borderRadius: '16px'
+              }}>
+                <div className="mic-pulse active-recording" style={{ background: '#10b981', width: '40px', height: '40px' }}>
+                  <Radio size={20} color="white" className="animate-pulse" />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ padding: '2px 8px', background: '#10b981', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 800, color: 'white' }}>ĐANG PHÁT</span>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>{activeBroadcast.title}</h3>
+                  </div>
+                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '2px' }}>
+                    Kênh: <strong>{activeBroadcast.channel}</strong> • Bởi: <strong>{activeBroadcast.user}</strong>
+                    {!isAudioEnabled && <span style={{ color: '#f59e0b', marginLeft: '10px', fontWeight: 700 }}>⚠️ Loa trình duyệt đang tắt</span>}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  {!isAudioEnabled && (
+                    <button 
+                      onClick={() => {
+                        // Play the current audio (already loaded from broadcast-start)
+                        audioRef.current.play().then(() => {
+                          setIsAudioEnabled(true);
+                          isAudioEnabledRef.current = true;
+                        }).catch(e => console.error('Manual play failed:', e));
+                      }}
+                      className="btn-primary"
+                      style={{ padding: '6px 16px', fontSize: '0.8rem', background: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      ▶ Nhấn để nghe
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => setActiveBroadcast(null)}
+                    className="btn-secondary"
+                    style={{ padding: '6px 16px', fontSize: '0.8rem' }}
+                  >
+                    Ẩn
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           {(() => {
             try {
               console.log('Rendering content for tab:', activeTab);
@@ -486,8 +776,9 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                         <p style={{ color: '#94a3b8', fontSize: '1.1rem', marginTop: '0.5rem' }}>Hệ thống đang sẵn sàng cho các lượt truyền tin tiếp theo.</p>
                       </div>
 
+
                       <section className="section-container">
-                        <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
+                      <div className="stats-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
                           <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('devices')}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ width: '45px', height: '45px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Activity size={24} color="#10b981" /></div>
@@ -509,19 +800,34 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                           <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('users')}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ width: '45px', height: '45px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><UserPlus size={24} color="#f59e0b" /></div>
-                              {stats?.users?.pending ? <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 700 }}>{stats.users.pending} Chờ duyệt</span> : null}
+                              {(stats?.users?.pending || 0) > 0 ? <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 700 }}>{stats?.users?.pending} Chờ duyệt</span> : null}
                             </div>
                             <p style={{ color: '#94a3b8', marginTop: '1.5rem', marginBottom: '0.5rem', fontWeight: 500 }}>Nhân sự hệ thống</p>
-                            <div className="stat-value">{stats?.users?.total || 0}</div>
+                            <div className="stat-value">
+                              {stats?.users?.total || 0}
+                              {(stats?.users?.pending || 0) > 0 && (
+                                <span style={{ marginLeft: '10px', fontSize: '0.8rem', background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '20px', verticalAlign: 'middle' }}>
+                                  {stats?.users?.pending} chờ
+                                </span>
+                              )}
+                            </div>
                             <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Tổng quản trị viên & Vận hành</p>
                           </div>
                           <div className="stat-card" style={{ cursor: 'pointer' }} onClick={() => setActiveTab('ai')}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div style={{ width: '45px', height: '45px', background: 'rgba(236, 72, 153, 0.1)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Sparkles size={24} color="#ec4899" /></div>
+                              {(stats?.pending_content || 0) > 0 ? <span style={{ fontSize: '0.8rem', color: '#ec4899', fontWeight: 700 }}>{stats?.pending_content} Chờ duyệt</span> : null}
                             </div>
-                            <p style={{ color: '#94a3b8', marginTop: '1.5rem', marginBottom: '0.5rem', fontWeight: 500 }}>Kiểm duyệt AI</p>
-                            <div className="stat-value">{stats?.proposals || 0}</div>
-                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Đề xuất cần rà soát</p>
+                            <p style={{ color: '#94a3b8', marginTop: '1.5rem', marginBottom: '0.5rem', fontWeight: 500 }}>Kiểm duyệt & phê duyệt</p>
+                            <div className="stat-value">
+                              {stats?.pending_content || 0}
+                              {(stats?.pending_content || 0) > 0 && (
+                                <span style={{ marginLeft: '10px', fontSize: '0.8rem', background: '#ef4444', color: 'white', padding: '2px 8px', borderRadius: '20px', verticalAlign: 'middle' }}>
+                                  {stats?.pending_content} chờ
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ margin: 0, color: '#64748b', fontSize: '0.85rem' }}>Bản tin cần rà soát & phê duyệt</p>
                           </div>
                         </div>
                       </section>
@@ -578,16 +884,18 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                     </div>
                   );
                 case 'schedule': return <ScheduleManagement />;
-                case 'content': return <ContentManagement />;
+                case 'content': return <ContentManagement user={user} />;
                 case 'media': return <MediaLibrary />;
                 case 'devices': return <DeviceManagement />;
+                case 'channel-monitor': return <ChannelMonitor />;
                 case 'users': return <UserManagement />;
-                case 'ai': return <AIReview />;
+                case 'ai': return <AIReview user={user} />;
                 case 'dictionary': return <MilitaryDictionary />;
                 case 'settings': return <SystemSettings />;
                 case 'profile': return <UserProfile />;
                 case 'analytics': return <Analytics />;
-                case 'audit-logs': return <AuditLogs />;
+                case 'reports': return <BroadcastHistory />;
+                case 'audit-logs': return <AuditLogs initialTab={auditLogInitialTab} />;
                 default: return <div>Tab không hợp lệ: {activeTab}</div>;
               }
             } catch (err: any) {

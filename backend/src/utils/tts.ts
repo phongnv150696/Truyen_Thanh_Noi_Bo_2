@@ -8,18 +8,20 @@ const __dirname = path.dirname(__filename);
 export interface TTSOptions {
   text: string;
   voice?: string;
+  rate?: string;
+  pitch?: string;
   outputPath: string;
 }
 
 export async function generateTTS(options: TTSOptions): Promise<void> {
-  const { text, voice = 'vi-VN-HoaiMyNeural', outputPath } = options;
-  const scriptPath = path.join(__dirname, 'tts-generate.py');
-  
-  return new Promise((resolve, reject) => {
-    // Calling python3 or python based on environment
-    const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+    const { text, voice = 'vi-VN-HoaiMyNeural', rate = '+0%', pitch = '+0Hz', outputPath } = options;
+    const scriptPath = path.join(__dirname, 'tts-generate.py');
     
-    const pythonProcess = spawn(pythonCmd, [scriptPath, text, voice, outputPath]);
+    return new Promise((resolve, reject) => {
+      // Calling python3 or python based on environment
+      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+      
+      const pythonProcess = spawn(pythonCmd, [scriptPath, text, voice, rate, pitch, outputPath]);
     
     let errorOutput = '';
     
