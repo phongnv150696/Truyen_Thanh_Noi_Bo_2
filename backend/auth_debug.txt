@@ -545,3 +545,10 @@
 [2026-03-22T08:19:48.902Z] Password provided length: 7
 [2026-03-22T08:19:48.993Z] Bcrypt comparison result: true
 [2026-03-22T08:19:48.994Z] Authentication SUCCESS
+[2026-03-23T12:31:01.985Z] --- Login Request Received ---
+[2026-03-23T12:31:01.991Z] Attempting login for: "admin"
+[2026-03-23T12:31:02.000Z] User found: admin (ID: 1)
+[2026-03-23T12:31:02.001Z] DB Password Hash: $2b$10$c7xSckz4HDvyhkIjUVIJP.DfxoBlhTZlRK/VbKPlxffXmD1PH1iLO
+[2026-03-23T12:31:02.001Z] Password provided length: 7
+[2026-03-23T12:31:02.081Z] Bcrypt comparison result: true
+[2026-03-23T12:31:02.082Z] Authentication SUCCESS

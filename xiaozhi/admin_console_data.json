@@ -1,0 +1,480 @@
+{
+  "users": [
+    {
+      "id": "admin_local",
+      "name": "Administrator",
+      "email": "admin@xiaozhi.local",
+      "username": "@admin",
+      "password_hash": "pbkdf2_sha256$200000$494a676c5f2fa54a03b2b33427643fa9$10dabf424c5986388c5cb1a353c81ca0302a706b6e25e0d7584a3be140e91a9d",
+      "role": "admin",
+      "status": "active",
+      "plan": "Enterprise",
+      "locked": false,
+      "created_at": "12/03/2026 16:02:26",
+      "last_login_at": "13/03/2026 17:10:15"
+    },
+    {
+      "id": "guest_local",
+      "name": "Người dùng mặc định",
+      "email": "guest@xiaozhi.local",
+      "username": "@guest",
+      "password_hash": "pbkdf2_sha256$200000$1677fc55be71ffd59229a38eb6c51673$53966f72e80a442c0f03738860f5955163682dd54e1a6f8d73c97ae763d466e2",
+      "role": "user",
+      "status": "active",
+      "plan": "Internal",
+      "locked": false,
+      "created_at": "12/03/2026 16:02:26",
+      "last_login_at": "13/03/2026 14:52:43"
+    }
+  ],
+  "models": {
+    "default_model": "GPT-4o mini",
+    "catalog": [
+      {
+        "provider": "OpenAI",
+        "model": "GPT-4o mini",
+        "temperature": 0.2,
+        "token_limit": 4096,
+        "enabled": true
+      },
+      {
+        "provider": "Google",
+        "model": "Gemini 1.5 Flash",
+        "temperature": 0.2,
+        "token_limit": 4096,
+        "enabled": true
+      }
+    ],
+    "providers": {
+      "OpenAI API": {
+        "status": "Chưa kết nối",
+        "base_url": "https://api.openai.com/v1"
+      },
+      "Google Gemini": {
+        "status": "Chưa kết nối",
+        "base_url": "https://generativelanguage.googleapis.com"
+      }
+    }
+  },
+  "prompts": {
+    "system_prompt": "Bạn là trợ lý AI nội bộ, ưu tiên trả lời rõ ràng và đúng ngữ cảnh.",
+    "role_prompt": "Chuyên viên hỗ trợ tri thức nội bộ.",
+    "personality": "Thân thiện, ngắn gọn, chính xác."
+  },
+  "billing": {
+    "subscription_plan": "Starter",
+    "monthly_budget": 0.0,
+    "api_cost_today": 0.0,
+    "token_usage_today": 0,
+    "usage_limit_per_user": 0
+  },
+  "settings": {
+    "language": "Tiếng Việt",
+    "theme": "Dark",
+    "email_notifications": true,
+    "security_mode": "Standard"
+  },
+  "integrations": [
+    {
+      "name": "CRM",
+      "type": "API",
+      "status": "Chưa kết nối",
+      "target": ""
+    },
+    {
+      "name": "Website Chat Widget",
+      "type": "Widget",
+      "status": "Sẵn sàng",
+      "target": ""
+    },
+    {
+      "name": "Messenger Bot",
+      "type": "Messaging",
+      "status": "Chưa kết nối",
+      "target": ""
+    }
+  ],
+  "moderation": {
+    "spam_threshold": 3,
+    "blocked_keywords": [
+      "spam",
+      "độc hại"
+    ],
+    "reports": []
+  },
+  "analytics": {
+    "manual_accuracy_rate": 0.0,
+    "manual_response_seconds": 0.0
+  },
+  "knowledge_registry": [
+    {
+      "name": "Thư mục datahoc",
+      "type": "Folder",
+      "status": "Active",
+      "location": "C:\\Users\\Admin\\Desktop\\Xiaozhi\\xiaozhi-local-chat\\datahoc"
+    },
+    {
+      "name": "Đảng_Cộng_sản_Việt_Nam.md",
+      "type": "Document",
+      "status": "Active",
+      "location": "C:\\Users\\Admin\\Desktop\\Xiaozhi\\xiaozhi-local-chat\\datahoc\\Đảng_Cộng_sản_Việt_Nam.md"
+    }
+  ],
+  "usage_logs": [
+    {
+      "timestamp": "12/03/2026 15:51:15",
+      "query": "được có phải là người vô cùng đẹp zai không",
+      "user_email": "guest@xiaozhi.local",
+      "response_time_ms": 52,
+      "matches_count": 1
+    },
+    {
+      "timestamp": "12/03/2026 16:25:09",
+      "query": "điều 1 kỷ luật là gì",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 102,
+      "matches_count": 1
+    },
+    {
+      "timestamp": "12/03/2026 20:23:01",
+      "query": "12 điều kỷ luật",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 73,
+      "matches_count": 1
+    },
+    {
+      "timestamp": "12/03/2026 21:14:13",
+      "query": "xin chào",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 50,
+      "matches_count": 1,
+      "intent": "general_lookup"
+    },
+    {
+      "timestamp": "12/03/2026 21:19:17",
+      "query": "được có phải là người đẹp trai không",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 60,
+      "matches_count": 1,
+      "intent": "general_lookup"
+    },
+    {
+      "timestamp": "13/03/2026 15:59:20",
+      "query": "Điều 1 trong 10 điều kỷ luật là gì",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 15,
+      "matches_count": 1,
+      "intent": "definition_lookup"
+    },
+    {
+      "timestamp": "13/03/2026 16:15:09",
+      "query": "điều 1 trong 12 điều kỷ luật là gì",
+      "user_email": "admin@xiaozhi.local",
+      "response_time_ms": 16,
+      "matches_count": 1,
+      "intent": "definition_lookup"
+    }
+  ],
+  "system_logs": [
+    {
+      "timestamp": "12/03/2026 15:36:09",
+      "level": "info",
+      "category": "system",
+      "message": "Khởi tạo admin console cục bộ."
+    },
+    {
+      "timestamp": "12/03/2026 15:50:20",
+      "level": "info",
+      "category": "knowledge",
+      "message": "Cập nhật knowledge file: Được_là_ai.md"
+    },
+    {
+      "timestamp": "12/03/2026 15:51:15",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi guest@xiaozhi.local: được có phải là người vô cùng đẹp zai không"
+    },
+    {
+      "timestamp": "12/03/2026 16:03:47",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 16:07:50",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 16:11:58",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 16:14:53",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 16:24:53",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 16:25:09",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local: điều 1 kỷ luật là gì"
+    },
+    {
+      "timestamp": "12/03/2026 16:36:28",
+      "level": "info",
+      "category": "knowledge",
+      "message": "Upload knowledge file: Đảng_Cộng_sản_Việt_Nam.md"
+    },
+    {
+      "timestamp": "12/03/2026 20:13:16",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:13:19",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:14:02",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:14:53",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:15:07",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:18:01",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:21:56",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 20:23:01",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local: 12 điều kỷ luật"
+    },
+    {
+      "timestamp": "12/03/2026 21:14:04",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 21:14:07",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 21:14:13",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local [Tra cứu tổng quát]: xin chào"
+    },
+    {
+      "timestamp": "12/03/2026 21:18:45",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 21:18:47",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "12/03/2026 21:19:17",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local [Tra cứu tổng quát]: được có phải là người đẹp trai không"
+    },
+    {
+      "timestamp": "13/03/2026 13:42:26",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:24:16",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:25:36",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:25:39",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:50:12",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:50:21",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng xuất: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:50:22",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng xuất: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:50:38",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: guest@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:50:54",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng xuất: guest@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:51:16",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:52:22",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng xuất: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:52:43",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: guest@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:53:12",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng xuất: guest@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:53:35",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 14:57:06",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:00:24",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:09:41",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:46:53",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:58:55",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:59:01",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 15:59:20",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local: Điều 1 trong 10 điều kỷ luật là gì"
+    },
+    {
+      "timestamp": "13/03/2026 16:14:23",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 16:14:31",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 16:14:42",
+      "level": "info",
+      "category": "conversation",
+      "message": "Bắt đầu cuộc trò chuyện mới: admin@xiaozhi.local"
+    },
+    {
+      "timestamp": "13/03/2026 16:15:09",
+      "level": "info",
+      "category": "request",
+      "message": "Tra cứu bởi admin@xiaozhi.local: điều 1 trong 12 điều kỷ luật là gì"
+    },
+    {
+      "timestamp": "13/03/2026 17:10:16",
+      "level": "info",
+      "category": "user",
+      "message": "Đăng nhập thành công: admin@xiaozhi.local"
+    }
+  ]
+}

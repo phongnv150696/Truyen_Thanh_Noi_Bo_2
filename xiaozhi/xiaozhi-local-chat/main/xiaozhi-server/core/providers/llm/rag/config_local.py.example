@@ -1,0 +1,123 @@
+"""
+RAG Configuration Module - LOCAL MODE
+Cấu hình để sử dụng models local thay vì tải từ HuggingFace
+"""
+
+from dataclasses import dataclass
+from typing import Literal
+import os
+
+@dataclass
+class EmbeddingModelConfig:
+    """Configuration for embedding models"""
+    model_id: str
+    dimension: int
+    size_mb: int
+    description: str
+    requires_tokenizer: bool = False
+
+# ============================================================================
+# CÁCH SỬ DỤNG:
+# ============================================================================
+# 1. Nếu bạn CHƯA có models local:
+#    - Chạy download_models.py khi có mạng
+#    - Models sẽ được cache tại ~/.cache/huggingface/
+#    - Sau đó tắt mạng, hệ thống tự động dùng cache
+#
+# 2. Nếu bạn ĐÃ có models local ở đường dẫn khác:
+#    - Uncomment phần "LOCAL MODEL PATHS" bên dưới
+#    - Sửa đường dẫn cho đúng
+# ============================================================================
+
+# ============================================================================
+# OPTION 1: AUTO-DOWNLOAD + CACHE (Default - Recommended)
+# ============================================================================
+# Models sẽ tự động download lần đầu (khi có mạng)
+# Lần sau sẽ dùng cache local (chạy offline được)
+EMBEDDING_MODELS = {
+    "lightweight": EmbeddingModelConfig(
+        model_id="sentence-transformers/all-MiniLM-L6-v2",
+        dimension=384,
+        size_mb=80,
+        description="Ultra-fast multilingual model, good for Vietnamese",
+        requires_tokenizer=False
+    ),
+    "balanced": EmbeddingModelConfig(
+        model_id="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        dimension=384,
+        size_mb=120,
+        description="Balanced speed/quality multilingual model",
+        requires_tokenizer=False
+    ),
+    "quality": EmbeddingModelConfig(
+        model_id="dangvantuan/vietnamese-embedding",
+        dimension=768,
+        size_mb=400,
+        description="Best quality for Vietnamese, requires pyvi tokenizer",
+        requires_tokenizer=True
+    )
+}
+
+# ============================================================================
+# OPTION 2: LOCAL MODEL PATHS (Uncomment nếu dùng models local)
+# ============================================================================
+# Ví dụ: Bạn đã download models về C:/Models/
+#
+# EMBEDDING_MODELS = {
+#     "lightweight": EmbeddingModelConfig(
+#         model_id="C:/Models/all-MiniLM-L6-v2",  # ← Sửa đường dẫn này
+#         dimension=384,
+#         size_mb=80,
+#         description="Ultra-fast multilingual model (LOCAL)",
+#         requires_tokenizer=False
+#     ),
+#     "balanced": EmbeddingModelConfig(
+#         model_id="C:/Models/paraphrase-multilingual-MiniLM-L12-v2",  # ← Sửa đường dẫn này
+#         dimension=384,
+#         size_mb=120,
+#         description="Balanced model (LOCAL)",
+#         requires_tokenizer=False
+#     ),
+#     "quality": EmbeddingModelConfig(
+#         model_id="C:/Models/vietnamese-embedding",  # ← Sửa đường dẫn này
+#         dimension=768,
+#         size_mb=400,
+#         description="Vietnamese model (LOCAL)",
+#         requires_tokenizer=True
+#     )
+# }
+
+@dataclass
+class RAGConfig:
+    """RAG System Configuration"""
+    # Embedding model selection
+    embedding_model: Literal["lightweight", "balanced", "quality"] = "lightweight"
+    
+    # Cross-encoder for re-ranking
+    cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    
+    # Document processing
+    chunk_size: int = 400
+    chunk_overlap: int = 100
+    
+    # Retrieval settings
+    n_results: int = 10  # Initial retrieval count
+    top_k_rerank: int = 3  # Final results after re-ranking
+    
+    # Performance optimizations
+    enable_cache: bool = True
+    cache_size: int = 100  # Number of queries to cache
+    parallel_processing: bool = True
+    batch_size: int = 32  # Batch size for embedding generation
+    
+    # Storage
+    chroma_path: str = "./data/rag-chroma"
+    collection_name: str = "xiaozhi_docs"
+    
+    # Document limits
+    max_file_size_mb: int = 50
+    max_pages: int = 500
+    
+    def get_embedding_config(self) -> EmbeddingModelConfig:
+        """Get the selected embedding model configuration"""
+        return EMBEDDING_MODELS[self.embedding_model]

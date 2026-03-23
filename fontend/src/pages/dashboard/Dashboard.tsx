@@ -690,6 +690,10 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
             )}
 
             {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
+              <div className={`nav-item ${activeTab === 'devices' ? 'active' : ''}`} onClick={() => setActiveTab('devices')}><Cpu size={20} /><span>Quản lý Thiết bị</span></div>
+            )}
+
+            {(user?.role_name === 'admin' || user?.role_name === 'technician' || user?.role_name === 'commander') && (
               <div className={`nav-item ${activeTab === 'channel-monitor' ? 'active' : ''}`} onClick={() => setActiveTab('channel-monitor')}><Radio size={20} /><span>Giám sát Kênh</span></div>
             )}
 
