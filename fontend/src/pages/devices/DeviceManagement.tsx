@@ -45,7 +45,7 @@ interface Unit {
 
 const API_URL = `http://${window.location.hostname}:3000`;
 
-export default function DeviceManagement() {
+export default function DeviceManagement({ onLogout }: { onLogout?: () => void }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,6 +84,10 @@ export default function DeviceManagement() {
       const response = await fetch(`${API_URL}/devices`, {
         headers: getHeaders()
       });
+      if (response.status === 401) {
+        onLogout?.();
+        return;
+      }
       const data = await response.json();
       
       const devicesArray = Array.isArray(data) ? data : [];

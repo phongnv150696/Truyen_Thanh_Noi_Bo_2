@@ -8,7 +8,7 @@ export default async function profileRoutes(fastify: FastifyInstance) {
     const userId = request.user.id;
     const query = `
       SELECT 
-        u.id, u.username, u.full_name, u.rank, u.email, u.created_at, u.updated_at,
+        u.id, u.username, u.full_name, u.rank, u.position, u.email, u.created_at, u.updated_at,
         r.name as role_name,
         un.name as unit_name
       FROM users u
@@ -27,7 +27,7 @@ export default async function profileRoutes(fastify: FastifyInstance) {
   // 2. Update profile information
   fastify.patch('/me', { preHandler: [fastify.authenticate] }, async (request: any, reply) => {
     const userId = request.user.id;
-    const { full_name, rank, email } = request.body as any;
+    const { full_name, rank, position, email } = request.body as any;
 
     try {
       const query = `
@@ -35,18 +35,19 @@ export default async function profileRoutes(fastify: FastifyInstance) {
         SET 
           full_name = COALESCE($1, full_name), 
           rank = COALESCE($2, rank), 
-          email = COALESCE($3, email),
+          position = COALESCE($3, position),
+          email = COALESCE($4, email),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $4
-        RETURNING id, username, full_name, rank, email
+        WHERE id = $5
+        RETURNING id, username, full_name, rank, position, email
       `;
-      const result = await fastify.pg.query(query, [full_name, rank, email, userId]);
+      const result = await fastify.pg.query(query, [full_name, rank, position, email, userId]);
       
       // Log action
       await fastify.pg.query(`
         INSERT INTO audit_logs (user_id, action, target_table, details)
         VALUES ($1, 'PROFILE_UPDATED', 'users', $2)
-      `, [userId, JSON.stringify({ full_name, rank, email })]);
+      `, [userId, JSON.stringify({ full_name, rank, position, email })]);
 
       return result.rows[0];
     } catch (err) {

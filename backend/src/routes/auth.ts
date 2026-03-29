@@ -15,6 +15,8 @@ const registerSchema = z.object({
   full_name: z.string().optional(),
   email: z.string().email().optional(),
   rank: z.string().optional(),
+  position: z.string().optional(),
+  unit_id: z.number().optional(),
 });
 
 const logFile = path.join(process.cwd(), 'auth_debug.txt');
@@ -69,7 +71,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         rank: user.rank,
         role_name: user.role_name,
         unit_id: user.unit_id
-      }, { expiresIn: '1d' });
+      }, { expiresIn: '7d' });
 
       return { 
         message: 'Đăng nhập thành công',
@@ -97,7 +99,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
       return reply.code(400).send({ error: 'Dữ liệu không hợp lệ', details: result.error.format() });
     }
 
-    const { username, password, full_name, email, rank } = result.data;
+    const { username, password, full_name, email, rank, position, unit_id } = result.data;
     
     try {
       // Check if user exists
@@ -115,8 +117,8 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
       // Insert into user_registrations (status = 'pending')
       await server.pg.query(
-        'INSERT INTO user_registrations (username, password_hash, full_name, email, rank, status) VALUES ($1, $2, $3, $4, $5, $6)',
-        [username, password_hash, full_name || '', email || '', rank || '', 'pending']
+        'INSERT INTO user_registrations (username, password_hash, full_name, email, rank, position, unit_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
+        [username, password_hash, full_name || '', email || '', rank || '', position || '', unit_id || null, 'pending']
       );
 
       // Notify Admin about new registration

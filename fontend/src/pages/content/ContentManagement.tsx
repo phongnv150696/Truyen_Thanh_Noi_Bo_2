@@ -41,9 +41,10 @@ interface ContentItem {
 
 interface ContentManagementProps {
   user: any;
+  onLogout?: () => void;
 }
 
-export default function ContentManagement({ user }: ContentManagementProps) {
+export default function ContentManagement({ user, onLogout }: ContentManagementProps) {
   const [contents, setContents] = useState<ContentItem[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -165,6 +166,12 @@ export default function ContentManagement({ user }: ContentManagementProps) {
       const res = await fetch(`http://${window.location.hostname}:3000/content`, {
         headers: getHeaders(false)
       })
+      if (!res.ok) {
+        if (res.status === 401) {
+          onLogout?.();
+          return;
+        }
+      }
       const data = await res.json()
       setContents(Array.isArray(data) ? data : [])
     } catch (err) {
@@ -559,10 +566,18 @@ export default function ContentManagement({ user }: ContentManagementProps) {
     }
   }
 
-  const filteredContents = contents.filter(c =>
-    c.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    c.summary?.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  const filteredContents = contents.filter(c => {
+    // Search filter
+    const matchesSearch = c.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         c.summary?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Role filter: Editor only sees their own content
+    if (user?.role_name === 'editor') {
+      return matchesSearch && (c.author_id === user.id);
+    }
+    
+    return matchesSearch;
+  })
 
   // Pagination Logic
   const totalPages = Math.ceil(filteredContents.length / itemsPerPage)
@@ -588,10 +603,12 @@ export default function ContentManagement({ user }: ContentManagementProps) {
           <h1 style={{ fontSize: '2rem', fontWeight: 800, margin: 0 }}>Quản lý Bản tin</h1>
           <p style={{ color: '#94a3b8', marginTop: '0.4rem' }}>Soạn thảo và quản lý các nội dung phát thanh trong hệ thống.</p>
         </div>
-        <button className="btn-primary" onClick={() => handleOpenModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Plus size={20} />
-          <span>Tạo bản tin mới</span>
-        </button>
+        {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+          <button className="btn-primary" onClick={() => handleOpenModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Plus size={20} />
+            <span>Tạo bản tin mới</span>
+          </button>
+        )}
       </div>
 
       <div className="glass-card" style={{ padding: '0', overflow: 'hidden' }}>
@@ -703,7 +720,9 @@ export default function ContentManagement({ user }: ContentManagementProps) {
                     <td style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
                         <button className="icon-btn" title="Xem" style={{ color: '#818cf8', background: 'rgba(99, 102, 241, 0.1)' }} onClick={() => handleOpenModal(item)}><Eye size={18} /></button>
-                        <button className="icon-btn delete" title="Xóa" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)' }} onClick={() => handleDelete(item)}><Trash2 size={18} /></button>
+                        {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+                          <button className="icon-btn delete" title="Xóa" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)' }} onClick={() => handleDelete(item)}><Trash2 size={18} /></button>
+                        )}
                         
                         <div className="action-menu-container" style={{ position: 'relative' }}>
                           <button 
@@ -755,17 +774,19 @@ export default function ContentManagement({ user }: ContentManagementProps) {
                               >
                                 <Mic size={16} /> Chuyển TTS
                               </button>
-                              <button 
-                                className="menu-item"
-                                style={{ 
-                                  width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', 
-                                  display: 'flex', alignItems: 'center', gap: '10px', color: '#818cf8', 
-                                  background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
-                                }}
-                                onClick={() => { handleOpenModal(item); setMenuOpenId(null); }}
-                              >
-                                <Edit2 size={16} /> Sửa thông tin
-                              </button>
+                               {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+                                <button 
+                                  className="menu-item"
+                                  style={{ 
+                                    width: '100%', textAlign: 'left', padding: '10px 12px', borderRadius: '8px', 
+                                    display: 'flex', alignItems: 'center', gap: '10px', color: '#818cf8', 
+                                    background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
+                                  }}
+                                  onClick={() => { handleOpenModal(item); setMenuOpenId(null); }}
+                                >
+                                  <Edit2 size={16} /> Sửa thông tin
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>

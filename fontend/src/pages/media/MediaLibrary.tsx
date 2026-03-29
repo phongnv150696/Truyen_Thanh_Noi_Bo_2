@@ -37,7 +37,7 @@ interface ContentItem {
   title: string
 }
 
-export default function MediaLibrary() {
+export default function MediaLibrary({ onLogout }: { onLogout?: () => void }) {
   const [files, setFiles] = useState<MediaFile[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)

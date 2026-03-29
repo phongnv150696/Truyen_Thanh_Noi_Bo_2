@@ -3,16 +3,21 @@ from aiohttp import web
 from config.logger import setup_logging
 from core.api.ota_handler import OTAHandler
 from core.api.vision_handler import VisionHandler
+from core.api.broadcast_handler import BroadcastHandler
+
 
 TAG = __name__
 
 
 class SimpleHttpServer:
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, ws_server=None):
         self.config = config
+        self.ws_server = ws_server
         self.logger = setup_logging()
         self.ota_handler = OTAHandler(config)
         self.vision_handler = VisionHandler(config)
+        self.broadcast_handler = BroadcastHandler(config, ws_server)
+
 
     def _get_websocket_url(self, local_ip: str, port: int) -> str:
         """Lấy địa chỉ websocket
@@ -56,6 +61,7 @@ class SimpleHttpServer:
                     web.get("/mcp/vision/explain", self.vision_handler.handle_get),
                     web.post("/mcp/vision/explain", self.vision_handler.handle_post),
                     web.options("/mcp/vision/explain", self.vision_handler.handle_post),
+                    web.post("/xiaozhi/broadcast", self.broadcast_handler.handle_post),
                 ]
             )
 

@@ -67,6 +67,8 @@ class WebSocketServer:
         secret_key = self.config["server"]["auth_key"]
         expire_seconds = auth_config.get("expire_seconds", None)
         self.auth = AuthManager(secret_key=secret_key, expire_seconds=expire_seconds)
+        self.active_connections = {}  # Store device_id -> ConnectionHandler
+
 
     async def start(self):
         server_config = self.config["server"]
@@ -114,6 +116,7 @@ class WebSocketServer:
             await websocket.send("Xác thực thất bại")
             await websocket.close()
             return
+            
         # Truyền instance server hiện tại khi tạo ConnectionHandler
         handler = ConnectionHandler(
             self.config,
@@ -124,25 +127,42 @@ class WebSocketServer:
             self._intent,
             self,  # Truyền instance server
         )
+
+        headers = dict(websocket.request.headers)
+        # Normalize headers to lowercase
+        headers = {k.lower(): v for k, v in headers.items()}
+        device_id = headers.get("device-id")
+        client_ip = websocket.remote_address[0] if hasattr(websocket, 'remote_address') else "unknown"
+
+        print(f"[{TAG}] Nhận yêu cầu kết nối từ {client_ip}. Device-ID: {device_id}", flush=True)
+
+        if device_id:
+            self.active_connections[device_id] = handler
+            # Gọi đăng ký sang Node.js
+            print(f"[{TAG}] Đang báo danh thiết bị {device_id} sang Node.js...", flush=True)
+            asyncio.create_task(self.register_device_to_node(device_id, client_ip))
+        else:
+            print(f"[{TAG}] Cảnh báo: Thiết bị kết nối không có device-id từ {client_ip}", flush=True)
+
         try:
             await handler.handle_connection(websocket)
         except Exception as e:
             self.logger.bind(tag=TAG).error(f"Lỗi khi xử lý kết nối: {e}")
         finally:
+            # Xóa khỏi danh sách kết nối đang hoạt động
+            if device_id and device_id in self.active_connections:
+                del self.active_connections[device_id]
+                self.logger.bind(tag=TAG).info(f"Loa {device_id} đã ngắt kết nối và được xóa khỏi active_connections")
+
             # Buộc đóng kết nối (nếu chưa đóng)
             try:
-                # Kiểm tra an toàn trạng thái WebSocket và đóng
                 if hasattr(websocket, "closed") and not websocket.closed:
                     await websocket.close()
                 elif hasattr(websocket, "state") and websocket.state.name != "CLOSED":
                     await websocket.close()
-                else:
-                    # Nếu không có thuộc tính closed, thử đóng trực tiếp
-                    await websocket.close()
             except Exception as close_error:
-                self.logger.bind(tag=TAG).error(
-                    f"Lỗi khi server buộc đóng kết nối: {close_error}"
-                )
+                self.logger.bind(tag=TAG).debug(f"Lỗi khi server buộc đóng kết nối: {close_error}")
+
 
     async def _http_response(self, websocket, request_headers):
         # Kiểm tra xem có phải yêu cầu nâng cấp WebSocket không
@@ -226,3 +246,24 @@ class WebSocketServer:
                 )
                 if not auth_success:
                     raise AuthenticationError("Invalid token")
+
+    async def register_device_to_node(self, device_id, ip_address):
+        """Thông báo cho Backend Node.js rằng có một loa XiaoZhi vừa kết nối"""
+        import aiohttp
+        node_url = "http://127.0.0.1:3000/devices/register-xiaozhi"
+        payload = {
+            "device_id": device_id,
+            "name": f"Loa XiaoZhi [{device_id[-4:] if len(device_id) > 4 else device_id}]",
+            "ip_address": ip_address,
+            "type": "xiaozhi-speaker"
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(node_url, json=payload, timeout=5) as response:
+                    if response.status == 200:
+                        self.logger.bind(tag=TAG).info(f"Đã báo danh loa {device_id} sang Node.js thành công")
+                    else:
+                        self.logger.bind(tag=TAG).warning(f"Lỗi khi báo danh loa sang Node.js: {response.status}")
+        except Exception as e:
+            self.logger.bind(tag=TAG).error(f"Không thể kết nối tới Node.js để báo danh loa: {e}")
+

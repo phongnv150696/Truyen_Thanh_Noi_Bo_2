@@ -25,7 +25,7 @@ interface DictionaryEntry {
   created_at: string;
 }
 
-export default function MilitaryDictionary() {
+export default function MilitaryDictionary({ onLogout }: { onLogout?: () => void }) {
   const [entries, setEntries] = useState<DictionaryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -60,6 +60,10 @@ export default function MilitaryDictionary() {
       const res = await fetch(`http://${window.location.hostname}:3000/dictionary`, {
         headers: getHeaders()
       })
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       const data = await res.json()
       setEntries(Array.isArray(data) ? data : [])
     } catch (err) {

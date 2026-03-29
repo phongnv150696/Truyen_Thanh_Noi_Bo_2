@@ -27,7 +27,7 @@ interface HealthMetric {
   recorded_at: string;
 }
 
-export default function SystemSettings() {
+export default function SystemSettings({ onLogout }: { onLogout?: () => void }) {
   const [activeSubTab, setActiveSubTab] = useState<'general' | 'health' | 'security'>('general');
   const [configs, setConfigs] = useState<ConfigItem[]>([]);
   const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>([]);
@@ -49,6 +49,10 @@ export default function SystemSettings() {
     setLoading(true);
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/settings`, { headers: getHeaders() });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       if (!res.ok) throw new Error('Failed to fetch');
       const data = await res.json();
       setConfigs(Array.isArray(data.config) ? data.config : []);

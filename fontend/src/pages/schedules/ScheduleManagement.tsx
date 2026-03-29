@@ -40,7 +40,8 @@ interface ScheduleEntry {
 }
 
 interface GroupedContent {
-  content_id: number;
+  content_id: number | null;
+  radio_id?: number | null;
   content_title: string;
   author_name: string | null;
   has_audio: boolean;
@@ -71,7 +72,9 @@ interface FlatSchedule {
   channel_id: number;
   channel_name: string;
   mount_point: string;
-  content_id: number;
+  content_id: number | null;
+  radio_id?: number | null;
+  radio_name?: string | null;
   content_title: string;
   author_name?: string;
   has_audio: boolean;
@@ -94,8 +97,8 @@ function ScheduleDetailPopup({
   item: GroupedContent;
   channels: Channel[];
   onClose: () => void;
-  onAddSlot: (contentId: number, channelId: number, scheduledTime: string, repeatPattern: string) => Promise<void>;
-  onUpdateSlot: (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string) => Promise<void>;
+  onAddSlot: (contentId: number | null, channelId: number, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number) => Promise<void>;
+  onUpdateSlot: (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string, duration?: number) => Promise<void>;
   onDeleteSlot: (scheduleId: number) => Promise<void>;
   onPlayNow: (scheduleId: number) => Promise<void>;
   isReadOnly?: boolean;
@@ -103,23 +106,35 @@ function ScheduleDetailPopup({
 }) {
   const [newChannelId, setNewChannelId] = useState(channels[0]?.id || 0);
   const [newTime, setNewTime] = useState('');
+  const [newEndTime, setNewEndTime] = useState('');
   const [newRepeat, setNewRepeat] = useState('none');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const extractTime = (iso: string) => {
+    if (!iso) return '';
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+    } catch (e) {
+      return '';
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     if (status === 'played') return (
-      <span style={{ padding: '2px 8px', borderRadius: '20px', background: 'rgba(16,185,129,0.15)', color: '#10b981', fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <span style={{ padding: '4px 10px', borderRadius: '10px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(16,185,129,0.1)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <CheckCircle2 size={10} /> Đã phát
       </span>
     );
     if (status === 'overdue') return (
-      <span style={{ padding: '2px 8px', borderRadius: '20px', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <span style={{ padding: '4px 10px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(239,68,68,0.1)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <XCircle size={10} /> Bỏ lỡ
       </span>
     );
     return (
-      <span style={{ padding: '2px 8px', borderRadius: '20px', background: 'rgba(251,191,36,0.15)', color: '#fbbf24', fontSize: '0.7rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+      <span style={{ padding: '4px 10px', borderRadius: '10px', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(245,158,11,0.1)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <Clock size={10} /> Chờ phát
       </span>
     );
@@ -136,14 +151,33 @@ function ScheduleDetailPopup({
       return;
     }
 
+    let duration = 0;
+    if (newEndTime) {
+      try {
+        const datePart = newTime.includes('T') ? newTime.split('T')[0] : new Date().toISOString().split('T')[0];
+        const start = new Date(newTime).getTime();
+        const [h, m] = newEndTime.split(':').map(Number);
+        const end = new Date(datePart).setHours(h, m, 0, 0);
+        
+        if (end <= start) {
+          alert("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
+          return;
+        }
+        duration = Math.floor((end - start) / 1000);
+      } catch (err) {
+        console.error("Invalid end time format", err);
+      }
+    }
+
     setSubmitting(true);
     if (editingId) {
-      await onUpdateSlot(editingId, newChannelId, newTime, newRepeat);
+      await onUpdateSlot(editingId, newChannelId, newTime, newRepeat, duration);
       setEditingId(null);
     } else {
-      await onAddSlot(item.content_id, newChannelId, newTime, newRepeat);
+      await onAddSlot(item.content_id, newChannelId, newTime, newRepeat, item.radio_id, duration);
     }
     setNewTime('');
+    setNewEndTime('');
     setSubmitting(false);
   };
 
@@ -152,11 +186,21 @@ function ScheduleDetailPopup({
     setNewChannelId(s.channel_id);
     setNewRepeat(s.repeat_pattern);
     setNewTime(s.scheduled_time);
+    if (s.duration) {
+      const start = new Date(s.scheduled_time);
+      const durationNum = Number(s.duration);
+      const end = new Date(start.getTime() + (isNaN(durationNum) ? 0 : durationNum) * 1000);
+      const endStr = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+      setNewEndTime(endStr);
+    } else {
+      setNewEndTime('');
+    }
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setNewTime('');
+    setNewEndTime('');
     setNewRepeat('none');
     setNewChannelId(channels[0]?.id || 0);
   };
@@ -173,7 +217,6 @@ function ScheduleDetailPopup({
     return false;
   };
 
-  // Group schedules by channel, filtering by date if needed
   const byChannel: Record<string, ScheduleEntry[]> = {};
   const dateToFilter = (selectedDate && selectedDate !== 'all') ? selectedDate : null;
 
@@ -192,136 +235,107 @@ function ScheduleDetailPopup({
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', width: '100%', maxWidth: '600px', maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)' }}>
+      <div style={{ background: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '24px', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.8)' }}>
         {/* Header */}
-        <div style={{ padding: '24px 28px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ padding: '24px 32px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'linear-gradient(to bottom, rgba(255,255,255,0.02), transparent)' }}>
           <div>
-            <div style={{ fontSize: '0.7rem', color: '#6366f1', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '6px' }}>Lịch phát chi tiết</div>
-            <h3 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 800, color: '#f1f5f9', lineHeight: 1.3 }}>{item.content_title}</h3>
+            <div style={{ fontSize: '0.7rem', color: '#818cf8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '8px', opacity: 0.8 }}>CHI TIẾT LỊCH PHÁT</div>
+            <h3 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#f8fafc', letterSpacing: '-0.02em' }}>{item.content_title}</h3>
             {item.author_name && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', color: '#64748b', fontSize: '0.85rem' }}>
-                <User size={13} /> {item.author_name}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                <User size={13} style={{ opacity: 0.7 }} /> {item.author_name}
               </div>
             )}
           </div>
-          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', padding: '10px', borderRadius: '15px', cursor: 'pointer' }}>
             <XCircle size={20} />
           </button>
         </div>
 
-        {/* Schedule list by channel */}
-        <div style={{ padding: '0 28px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          {!isReadOnly && (
-            <div style={{ background: editingId ? 'rgba(251,191,36,0.06)' : 'rgba(99,102,241,0.06)', border: `1px solid ${editingId ? 'rgba(251,191,36,0.2)' : 'rgba(99,102,241,0.15)'}`, borderRadius: '18px', padding: '16px', marginTop: '10px', display: 'flex', gap: '16px', alignItems: 'flex-end', transition: 'all 0.3s' }}>
-              <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr 0.8fr', gap: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, display: 'block', marginBottom: '6px' }}>Kênh phát</label>
-                  <select
-                    value={newChannelId}
-                    onChange={e => setNewChannelId(parseInt(e.target.value))}
-                    className="premium-select"
-                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
-                  >
-                    {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, display: 'block', marginBottom: '6px' }}>Tần suất</label>
-                  <select
-                    value={newRepeat}
-                    onChange={e => setNewRepeat(e.target.value)}
-                    className="premium-select"
-                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
-                  >
-                    <option value="none">Phát một lần (Tự do)</option>
-                    <option value="daily">Hàng ngày</option>
-                    <option value="weekly">Hàng tuần</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 700, display: 'block', marginBottom: '6px' }}>Giờ phát</label>
-                  <input
-                    type="time"
-                    required
-                    value={newTime.includes('T') ? newTime.split('T')[1].substring(0, 5) : newTime}
-                    onChange={e => {
-                      const time = e.target.value;
-                      const baseDate = (selectedDate && selectedDate !== 'all') ? selectedDate : new Date().toISOString().split('T')[0];
-                      setNewTime(`${baseDate}T${time}`);
-                    }}
-                    className="premium-input"
-                    style={{ padding: '8px 10px', fontSize: '0.85rem' }}
-                  />
-                </div>
+        {/* Edit Section */}
+        {!isReadOnly && (
+          <div style={{ padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: editingId ? 'rgba(245,158,11,0.03)' : 'rgba(99,102,241,0.03)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              <div>
+                <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Kênh phát sóng</label>
+                <select value={newChannelId} onChange={e => setNewChannelId(parseInt(e.target.value))} className="premium-select" style={{ width: '100%', height: '42px' }}>
+                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {editingId && (
-                  <button onClick={cancelEdit} title="Hủy sửa" style={{ height: '40px', width: '40px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#94a3b8', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <X size={18} />
-                  </button>
-                )}
-                <button
-                  onClick={handleSave}
-                  disabled={submitting || !newTime}
-                  style={{ height: '40px', padding: '0 24px', background: editingId ? 'linear-gradient(135deg,#f59e0b,#fbbf24)' : 'linear-gradient(135deg,#6366f1,#a855f7)', border: 'none', borderRadius: '12px', color: 'white', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: editingId ? '0 4px 15px rgba(245,158,11,0.3)' : '0 4px 15px rgba(99,102,241,0.3)', whiteSpace: 'nowrap' }}
-                >
-                  {submitting ? <RefreshCw size={16} className="animate-spin" /> : editingId ? <Save size={18} /> : <Plus size={18} />} 
-                  {editingId ? 'Cập nhật' : 'Lưu'}
-                </button>
+              <div>
+                <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Tần suất lặp</label>
+                <select value={newRepeat} onChange={e => setNewRepeat(e.target.value)} className="premium-select" style={{ width: '100%', height: '42px' }}>
+                  <option value="none">Một lần</option>
+                  <option value="daily">Hàng ngày</option>
+                  <option value="weekly">Hàng tuần</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Giờ Bắt đầu</label>
+                <input type="time" required value={extractTime(newTime)} onChange={e => {
+                  const time = e.target.value;
+                  const baseDate = (selectedDate && selectedDate !== 'all') ? selectedDate : new Date().toISOString().split('T')[0];
+                  setNewTime(`${baseDate}T${time}:00`);
+                }} className="premium-input" style={{ width: '100%', height: '42px' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.65rem', color: '#818cf8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Giờ Kết thúc (Tùy chọn)</label>
+                <input type="time" value={newEndTime} onChange={e => setNewEndTime(e.target.value)} className="premium-input" style={{ width: '100%', height: '42px', borderColor: 'rgba(129,140,248,0.3)' }} />
               </div>
             </div>
-          )}
-        </div>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
+              <button onClick={handleSave} disabled={submitting || !newTime} className={`hover-scale ${editingId ? 'btn-glow-gold' : 'btn-glow-indigo'}`} style={{ flex: 2, height: '42px', background: editingId ? 'linear-gradient(135deg,#f59e0b,#fbbf24)' : 'linear-gradient(135deg,#6366f1,#a855f7)', border: 'none', borderRadius: '12px', color: 'white', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}>
+                {submitting ? <RefreshCw size={16} className="animate-spin" /> : editingId ? <Save size={18} /> : <Plus size={18} />} 
+                {editingId ? 'Cập nhật khung giờ' : 'Thêm khung giờ'}
+              </button>
+              {editingId && (
+                <button onClick={cancelEdit} className="hover-scale" style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#94a3b8', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <X size={16} /> Hủy
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
-        <div style={{ overflowY: 'auto', flex: 1, padding: '16px 28px' }}>
+        {/* List Section */}
+        <div style={{ overflowY: 'auto', flex: 1, padding: '24px 32px' }}>
           {Object.keys(byChannel).length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem', color: '#475569' }}>
+            <div style={{ textAlign: 'center', padding: '3rem', color: '#475569' }}>
               <Clock size={32} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
               <p style={{ margin: 0, fontSize: '0.9rem' }}>Chưa có khung giờ nào được lập lịch.</p>
             </div>
           ) : (
             Object.entries(byChannel).map(([channelName, slots]) => (
-              <div key={channelName} style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+              <div key={channelName} style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
                   <Radio size={14} color="#6366f1" />
                   <span style={{ fontWeight: 700, color: '#818cf8', fontSize: '0.9rem' }}>{channelName}</span>
                   <span style={{ fontSize: '0.7rem', color: '#475569' }}>({slots.length} khung giờ)</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '22px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '22px' }}>
                   {slots.map(s => (
-                    <div key={s.schedule_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'rgba(255,255,255,0.02)', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f1f5f9' }}>
-                            {new Date(s.scheduled_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: '#475569' }}>
-                            {new Date(s.scheduled_time).toLocaleDateString('vi-VN')} · {s.repeat_pattern === 'daily' ? 'Hàng ngày' : s.repeat_pattern === 'weekly' ? 'Hàng tuần' : 'Một lần'}
+                    <div key={s.schedule_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.04)' }} className="hover-scale glass-glow">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ padding: '8px 12px', background: 'rgba(99,102,241,0.06)', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ fontWeight: 800, color: '#818cf8', fontSize: '0.95rem' }}>{extractTime(s.scheduled_time)}</div>
+                          <div style={{ width: '10px', height: '1px', background: 'rgba(129,140,248,0.3)' }}></div>
+                          <div style={{ fontWeight: 800, color: s.duration && parseInt(s.duration) > 0 ? '#10b981' : '#475569', fontSize: '0.95rem' }}>
+                             {s.duration && parseInt(s.duration) > 0 
+                               ? new Date(new Date(s.scheduled_time).getTime() + parseInt(s.duration) * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                               : '--:--'}
                           </div>
                         </div>
                         {getStatusBadge(s.play_status)}
                       </div>
                       {!isReadOnly && (
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={() => startEdit(s)}
-                            title="Sửa khung giờ"
-                            style={{ background: 'rgba(99,102,241,0.1)', border: 'none', color: '#6366f1', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => startEdit(s)} className="hover-scale" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Edit3 size={13} />
                           </button>
-                          <button
-                            onClick={() => onPlayNow(s.schedule_id)}
-                            title="Phát ngay"
-                            style={{ background: 'rgba(16,185,129,0.1)', border: 'none', color: '#10b981', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <Play size={13} />
+                          <button onClick={() => onPlayNow(s.schedule_id)} className="hover-scale" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', color: '#10b981', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Play size={13} fill="#10b981" />
                           </button>
-                          <button
-                            onClick={() => onDeleteSlot(s.schedule_id)}
-                            title="Xóa khung giờ này"
-                            style={{ background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
+                          <button onClick={() => onDeleteSlot(s.schedule_id)} className="hover-scale" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Trash2 size={13} />
                           </button>
                         </div>
@@ -332,7 +346,6 @@ function ScheduleDetailPopup({
               </div>
             ))
           )}
-
         </div>
       </div>
     </div>
@@ -340,14 +353,14 @@ function ScheduleDetailPopup({
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function ScheduleManagement() {
+export default function ScheduleManagement({ onLogout }: { onLogout?: () => void }) {
   const [groupedContents, setGroupedContents] = useState<GroupedContent[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isEmergencyActive, setIsEmergencyActive] = useState(false);
-  const [processingId, setProcessingId] = useState<number | null>(null);
+  const [processingId, setProcessingId] = useState<string | number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
@@ -362,7 +375,8 @@ export default function ScheduleManagement() {
     channel_id: '',
     content_id: '',
     scheduled_time: '',
-    repeat_pattern: 'none'
+    repeat_pattern: 'none',
+    end_time: ''
   });
   const [contentSearchQuery, setContentSearchQuery] = useState('');
   const [isContentListOpen, setIsContentListOpen] = useState(false);
@@ -372,7 +386,7 @@ export default function ScheduleManagement() {
   const itemsPerPage = 7;
 
   // Menu state (⋮)
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const getHeaders = () => {
     const token = localStorage.getItem('openclaw_token');
@@ -391,6 +405,10 @@ export default function ScheduleManagement() {
 
       // Check schedule API response explicitly
       if (!schedRes.ok) {
+        if (schedRes.status === 401) {
+          onLogout?.();
+          return;
+        }
         const errBody = await schedRes.json().catch(() => ({}));
         const msg = errBody.error || errBody.message || `HTTP ${schedRes.status}`;
         setError(`Không thể tải lịch phát: ${msg} (HTTP ${schedRes.status})`);
@@ -413,13 +431,14 @@ export default function ScheduleManagement() {
         setError(`API trả về dữ liệu không hợp lệ: ${JSON.stringify(schedData).substring(0, 100)}`);
       }
 
-      const map = new Map<number, GroupedContent>();
-
+      const map = new Map<string, GroupedContent>();
       for (const s of flatList) {
-        if (!map.has(s.content_id)) {
-          map.set(s.content_id, {
+        const groupKey = s.content_id ? `c${s.content_id}` : `r${s.radio_id}`;
+        if (!map.has(groupKey)) {
+          map.set(groupKey, {
             content_id: s.content_id,
-            content_title: s.content_title,
+            radio_id: s.radio_id,
+            content_title: s.radio_name ? `Radio: ${s.radio_name}` : (s.content_title || 'Nội dung không tên'),
             author_name: s.author_name || null,
             has_audio: s.has_audio,
             schedules: []
@@ -429,9 +448,9 @@ export default function ScheduleManagement() {
         const sTime = new Date(s.scheduled_time);
         let play_status: 'played' | 'pending' | 'overdue' = 'pending';
         if (s.triggered_at) play_status = 'played';
-        else if (sTime <= now) play_status = 'overdue';
+        else if (now.getTime() - sTime.getTime() > 2 * 60 * 1000) play_status = 'overdue';
 
-        map.get(s.content_id)!.schedules.push({
+        map.get(groupKey)!.schedules.push({
           schedule_id: s.id,
           scheduled_time: s.scheduled_time,
           channel_id: s.channel_id,
@@ -446,8 +465,7 @@ export default function ScheduleManagement() {
       }
 
       const grouped = Array.from(map.values());
-      console.log('[Schedules] grouped:', grouped.length, 'content items');
-
+      console.log('[Schedules] grouped:', grouped.length, 'items');
       setGroupedContents(grouped);
       setChannels(Array.isArray(chans) ? chans : []);
       setContents(Array.isArray(conts) ? conts : []);
@@ -468,6 +486,7 @@ export default function ScheduleManagement() {
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'emergency_status_change') setIsEmergencyActive(data.active);
+        if (data.type === 'broadcast-start') fetchData();
       } catch { }
     };
     return () => socket.close();
@@ -502,13 +521,18 @@ export default function ScheduleManagement() {
     finally { setProcessingId(null); }
   };
 
-  const handlePlayAllChannels = async (contentId: number) => {
-    if (!confirm('Bạn có chắc chắn muốn phát bản tin này trên TẤT CẢ các kênh có lịch trong hôm nay?')) return;
-    setProcessingId(contentId);
+  const handlePlayAllChannels = async (contentId: number | null, radioId?: number | null) => {
+    if (!confirm('Bạn có chắc chắn muốn phát nội dung này trên TẤT CẢ các kênh có lịch trong hôm nay?')) return;
+    const groupKey = contentId ? `c${contentId}` : `r${radioId}`;
+    if (!groupKey) return;
+    setProcessingId(groupKey);
     try {
-      const res = await fetch(`${API_URL}/schedules/content/${contentId}/play-all`, { 
-        method: 'POST', 
-        headers: getHeaders() 
+      const url = contentId
+        ? `${API_URL}/schedules/content/${contentId}/play-all`
+        : `${API_URL}/schedules/radio/${radioId}/play-all`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: getHeaders()
       });
       if (res.ok) {
         const data = await res.json();
@@ -522,8 +546,9 @@ export default function ScheduleManagement() {
     finally { setProcessingId(null); }
   };
 
-  const handleDeleteContent = async (contentId: number) => {
-    const item = groupedContents.find(g => g.content_id === contentId);
+  const handleDeleteContent = async (contentId: number | null, radioId?: number | null) => {
+    const groupKey = contentId ? `c${contentId}` : `r${radioId}`;
+    const item = groupedContents.find(g => (g.content_id ? `c${g.content_id}` : `r${g.radio_id}`) === groupKey);
     if (!item) return;
     if (!confirm(`Xóa toàn bộ ${item.schedules.length} lịch phát của "${item.content_title}"?`)) return;
     try {
@@ -533,11 +558,11 @@ export default function ScheduleManagement() {
         headers: { 'Content-Type': 'application/json', ...getHeaders() },
         body: JSON.stringify({ ids })
       });
-      setGroupedContents(prev => prev.filter(g => g.content_id !== contentId));
+      setGroupedContents(prev => prev.filter(g => (g.content_id ? `c${g.content_id}` : `r${g.radio_id}`) !== groupKey));
     } catch { setError('Lỗi kết nối khi xóa.'); }
   };
 
-  const onAddSlot = async (contentId: number, channelId: number, scheduledTime: string, repeatPattern: string) => {
+  const onAddSlot = async (contentId: number | null, channelId: number, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number) => {
     try {
       const res = await fetch(`${API_URL}/schedules`, {
         method: 'POST',
@@ -545,8 +570,10 @@ export default function ScheduleManagement() {
         body: JSON.stringify({
           channel_id: channelId,
           content_id: contentId,
+          radio_id: radioId,
           scheduled_time: scheduledTime,
-          repeat_pattern: repeatPattern
+          repeat_pattern: repeatPattern,
+          duration: duration
         })
       });
       if (res.ok) {
@@ -555,7 +582,7 @@ export default function ScheduleManagement() {
         if (viewingItem) {
           const newData = await (await fetch(`${API_URL}/schedules`, { headers: getHeaders() })).json();
           const flatList: FlatSchedule[] = Array.isArray(newData) ? newData : [];
-          updateViewingItem(flatList, viewingItem.content_id);
+          updateViewingItem(flatList, viewingItem.content_id, viewingItem.radio_id);
         }
       }
     } catch (err) {
@@ -563,7 +590,7 @@ export default function ScheduleManagement() {
     }
   };
 
-  const onUpdateSlot = async (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string) => {
+  const onUpdateSlot = async (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string, duration?: number) => {
     try {
       const res = await fetch(`${API_URL}/schedules/${scheduleId}`, {
         method: 'PATCH',
@@ -571,7 +598,8 @@ export default function ScheduleManagement() {
         body: JSON.stringify({
           channel_id: channelId,
           scheduled_time: scheduledTime,
-          repeat_pattern: repeatPattern
+          repeat_pattern: repeatPattern,
+          duration: duration
         })
       });
       if (res.ok) {
@@ -579,7 +607,7 @@ export default function ScheduleManagement() {
         if (viewingItem) {
           const newData = await (await fetch(`${API_URL}/schedules`, { headers: getHeaders() })).json();
           const flatList: FlatSchedule[] = Array.isArray(newData) ? newData : [];
-          updateViewingItem(flatList, viewingItem.content_id);
+          updateViewingItem(flatList, viewingItem.content_id, viewingItem.radio_id);
         }
       }
     } catch (err) {
@@ -587,15 +615,20 @@ export default function ScheduleManagement() {
     }
   };
 
-  const updateViewingItem = (flatList: FlatSchedule[], contentId: number) => {
+  const updateViewingItem = (flatList: FlatSchedule[], contentId: number | null, radioId?: number | null) => {
     // Re-group just for the content we care about
-    const map = new Map<number, GroupedContent>();
+    const map = new Map<string, GroupedContent>();
+    const targetKey = contentId ? `c${contentId}` : `r${radioId}`;
+
     for (const s of flatList) {
-      if (s.content_id !== contentId) continue;
-      if (!map.has(s.content_id)) {
-        map.set(s.content_id, {
+      const groupKey = s.content_id ? `c${s.content_id}` : `r${s.radio_id}`;
+      if (groupKey !== targetKey) continue;
+
+      if (!map.has(groupKey)) {
+        map.set(groupKey, {
           content_id: s.content_id,
-          content_title: s.content_title,
+          radio_id: s.radio_id,
+          content_title: s.radio_name ? `Radio: ${s.radio_name}` : (s.content_title || 'Nội dung không tên'),
           author_name: s.author_name || null,
           has_audio: s.has_audio,
           schedules: []
@@ -607,7 +640,7 @@ export default function ScheduleManagement() {
       if (s.triggered_at) play_status = 'played';
       else if (sTime <= now) play_status = 'overdue';
 
-      map.get(s.content_id)!.schedules.push({
+      map.get(groupKey)!.schedules.push({
         schedule_id: s.id,
         scheduled_time: s.scheduled_time,
         channel_id: s.channel_id,
@@ -620,7 +653,7 @@ export default function ScheduleManagement() {
         play_status: play_status
       });
     }
-    const updated = map.get(contentId);
+    const updated = map.get(targetKey);
     if (updated) setViewingItem(updated);
   };
 
@@ -633,7 +666,7 @@ export default function ScheduleManagement() {
         // Refresh popup data
         const newData = await (await fetch(`${API_URL}/schedules`, { headers: getHeaders() })).json();
         const flatList: FlatSchedule[] = Array.isArray(newData) ? newData : [];
-        updateViewingItem(flatList, viewingItem.content_id);
+        updateViewingItem(flatList, viewingItem.content_id, viewingItem.radio_id);
       }
     } catch { setError('Lỗi khi xóa khung giờ.'); }
   };
@@ -653,14 +686,31 @@ export default function ScheduleManagement() {
     setIsSubmitting(true);
     setError(null);
     try {
+      // Calculate duration if end_time is provided
+      const payload = { ...newSchedule };
+      if (payload.end_time && payload.scheduled_time) {
+        try {
+          const datePart = payload.scheduled_time.split('T')[0];
+          const start = new Date(payload.scheduled_time).getTime();
+          const [h, m] = payload.end_time.split(':').map(Number);
+          const end = new Date(datePart).setHours(h, m, 0, 0);
+          if (end > start) {
+            payload.duration = Math.floor((end - start) / 1000);
+          }
+        } catch (err) {
+          console.error("Main modal duration error", err);
+        }
+      }
+      delete payload.end_time;
+
       const res = await fetch(`${API_URL}/schedules`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getHeaders() },
-        body: JSON.stringify(newSchedule)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         setIsModalOpen(false);
-        setNewSchedule({ channel_id: '', content_id: '', scheduled_time: '', repeat_pattern: 'none' });
+        setNewSchedule({ channel_id: '', content_id: '', scheduled_time: '', repeat_pattern: 'none', end_time: '' });
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
@@ -702,7 +752,7 @@ export default function ScheduleManagement() {
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
-  // Filter contents for the "Add New" form: 
+  // Filter contents for the "Add New" form:
   // 1. Must not already have a schedule on the selected date
   // 2. Must match the contentSearchQuery
   const availableContents = contents.filter(c => {
@@ -711,7 +761,7 @@ export default function ScheduleManagement() {
     if (scheduledToday) return false;
 
     if (!contentSearchQuery) return true;
-    return (c.title || '').toLowerCase().includes(contentSearchQuery.toLowerCase()) || 
+    return (c.title || '').toLowerCase().includes(contentSearchQuery.toLowerCase()) ||
            (c.author_name || '').toLowerCase().includes(contentSearchQuery.toLowerCase());
   });
 
@@ -907,8 +957,9 @@ export default function ScheduleManagement() {
               <p>Không tìm thấy lịch phát nào.</p>
             </div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {paginated.map(item => {
+            <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '120px', minHeight: '300px' }}>
+              {paginated.map((item, index) => {
+                const groupKey = item.content_id ? `c${item.content_id}` : `r${item.radio_id}`;
                 const dateToFilter = selectedDate !== 'all' ? selectedDate : null;
                 const relevantSchedules = dateToFilter
                   ? item.schedules.filter(s => isScheduledOnDate(s, dateToFilter))
@@ -918,10 +969,10 @@ export default function ScheduleManagement() {
                 const pendingCount = relevantSchedules.filter(s => s.play_status === 'pending').length;
                 const overdueCount = relevantSchedules.filter(s => s.play_status === 'overdue').length;
                 return (
-                  <div key={item.content_id} className="table-row-hover" style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.02)', transition: 'all 0.2s ease' }}>
+                  <div key={groupKey} className="table-row-hover" style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.02)', transition: 'all 0.2s ease' }}>
                     {/* ID */}
                     <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
-                      #{item.content_id}
+                      #{item.content_id || item.radio_id}
                     </div>
                     {/* Tên bản tin */}
                     <div style={{ flex: 2, paddingRight: '1rem' }}>
@@ -981,7 +1032,7 @@ export default function ScheduleManagement() {
 
                       {/* 🗑 Xóa tất cả lịch */}
                       <button
-                        onClick={() => handleDeleteContent(item.content_id)}
+                        onClick={() => handleDeleteContent(item.content_id, item.radio_id)}
                         title="Xóa tất cả lịch phát"
                         style={{ background: 'rgba(239,68,68,0.08)', border: 'none', color: '#ef4444', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
                       >
@@ -991,35 +1042,49 @@ export default function ScheduleManagement() {
                       {/* ⋮ Menu */}
                       <div className="schedule-action-menu" style={{ position: 'relative' }}>
                         <button
-                          onClick={() => setMenuOpenId(menuOpenId === item.content_id ? null : item.content_id)}
-                          style={{ background: menuOpenId === item.content_id ? 'rgba(255,255,255,0.08)' : 'none', border: 'none', color: '#64748b', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                          onClick={() => {
+                            setMenuOpenId(menuOpenId === groupKey ? null : groupKey);
+                          }}
+                          style={{ background: menuOpenId === groupKey ? 'rgba(255,255,255,0.08)' : 'none', border: 'none', color: '#64748b', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                         >
                           <MoreVertical size={16} />
                         </button>
-                        {menuOpenId === item.content_id && (
-                          <div className="animate-fade-in" style={{ position: 'absolute', right: 0, top: '100%', marginTop: '6px', width: '160px', background: 'rgba(15,23,42,0.97)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '6px', zIndex: 50, boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)' }}>
+                        {menuOpenId === groupKey && (
+                            <div className="animate-fade-in" style={{ 
+                              position: 'absolute', 
+                              right: 0, 
+                              ...(index >= Math.max(0, paginated.length - 2) && paginated.length > 3 ? { bottom: '100%', marginBottom: '6px' } : { top: '100%', marginTop: '6px' }),
+                              width: '160px', 
+                              background: 'rgba(15,23,42,0.97)', 
+                              backdropFilter: 'blur(20px)', 
+                              border: '1px solid rgba(255,255,255,0.08)', 
+                              borderRadius: '12px', 
+                              padding: '6px', 
+                              zIndex: 50, 
+                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)' 
+                            }}>
+                              <button
+                                onClick={() => { setMenuOpenId(null); setViewingItem(item); setViewingDetailOnly(false); }}
+                                style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
+                              >
+                                <Plus size={14} />
+                                <span>Sửa lịch phát</span>
+                              </button>
                             <button
-                              onClick={() => { setMenuOpenId(null); setViewingItem(item); setViewingDetailOnly(false); }}
-                              style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
-                            >
-                              <Plus size={14} />
-                              <span>Sửa lịch phát</span>
-                            </button>
-                            <button
-                              onClick={() => { 
-                                setMenuOpenId(null); 
+                              onClick={() => {
+                                setMenuOpenId(null);
                                 if (!item.has_audio) {
                                   alert('Bản tin này hiện chưa được gán file âm thanh, không thể phát đa kênh. Vui lòng cập nhật âm thanh trước.');
                                   return;
                                 }
-                                handlePlayAllChannels(item.content_id); 
+                                handlePlayAllChannels(item.content_id, item.radio_id);
                               }}
                               style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: item.has_audio ? '#10b981' : '#475569', cursor: item.has_audio ? 'pointer' : 'not-allowed', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
                             >
-                              {processingId === item.content_id ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+                              {processingId === groupKey ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
                               <span>Phát ngay (Tất cả kênh)</span>
                             </button>
-                          </div>
+                            </div>
                         )}
                       </div>
                     </div>
@@ -1144,11 +1209,11 @@ export default function ScheduleManagement() {
                     type="time"
                     required
                     className="premium-input"
-                    value={newSchedule.scheduled_time.includes('T') ? newSchedule.scheduled_time.split('T')[1].substring(0, 5) : newSchedule.scheduled_time}
+                    value={newSchedule.scheduled_time ? (new Date(newSchedule.scheduled_time).getHours().toString().padStart(2, '0') + ':' + new Date(newSchedule.scheduled_time).getMinutes().toString().padStart(2, '0')) : ''}
                     onChange={e => {
                       const time = e.target.value;
                       const baseDate = selectedDate === 'all' ? new Date().toISOString().split('T')[0] : selectedDate;
-                      setNewSchedule({ ...newSchedule, scheduled_time: `${baseDate}T${time}` });
+                      setNewSchedule({ ...newSchedule, scheduled_time: `${baseDate}T${time}:00` });
                     }}
                   />
                 </div>
@@ -1156,10 +1221,23 @@ export default function ScheduleManagement() {
                   <label className="premium-label"><RefreshCw size={14} /> Tần suất</label>
                   <select className="premium-select" value={newSchedule.repeat_pattern} onChange={e => setNewSchedule({ ...newSchedule, repeat_pattern: e.target.value })}>
                     <option value="none">Phát một lần (Tự do)</option>
-                    <option value="daily">Hàng ngày (Tự động phát vào giờ này mỗi ngày)</option>
-                    <option value="weekly">Hàng tuần (Phát định kỳ 1 tuần/lần vào đúng ngày này)</option>
+                    <option value="daily">Hàng ngày (Tự động phát mỗi ngày)</option>
+                    <option value="weekly">Hàng tuần (Phát 1 tuần/lần)</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Added: Optional Duration for Content too, or specifically if it was a radio (but radio addition is via popup usually) */}
+              <div className="premium-form-group">
+                <label className="premium-label"><Clock size={14} /> Giờ kết thúc (Tùy chọn)</label>
+                <input
+                  type="time"
+                  className="premium-input"
+                  value={newSchedule.end_time || ''}
+                  onChange={e => setNewSchedule({ ...newSchedule, end_time: e.target.value })}
+                  placeholder="Để trống nếu phát hết file"
+                />
+                <p style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px' }}>* Chỉ áp dụng nếu bạn muốn giới hạn thời gian phát.</p>
               </div>
               <div style={{ display: 'flex', gap: '16px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)} style={{ flex: 1 }}>Hủy bỏ</button>

@@ -42,7 +42,7 @@ interface Notification {
   created_at: string;
 }
 
-export default function AuditLogs({ initialTab = 'audit' }: { initialTab?: 'audit' | 'notifications' }) {
+export default function AuditLogs({ initialTab = 'audit', onLogout }: { initialTab?: 'audit' | 'notifications', onLogout?: () => void }) {
   const [activeSubTab, setActiveSubTab] = useState<'audit' | 'notifications'>(initialTab);
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -65,6 +65,10 @@ export default function AuditLogs({ initialTab = 'audit' }: { initialTab?: 'audi
       const res = await fetch(`${API_URL}/settings/audit-logs?page=${currentPage}&limit=${itemsPerPage}&action=${actionFilter}`, {
         headers: getHeaders()
       });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       if (res.ok) {
         const json = await res.json();
         setLogs(Array.isArray(json.data) ? json.data : []);
@@ -83,6 +87,10 @@ export default function AuditLogs({ initialTab = 'audit' }: { initialTab?: 'audi
       const res = await fetch(`${API_URL}/notifications`, {
         headers: getHeaders()
       });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         const notifs = Array.isArray(data) ? data : [];

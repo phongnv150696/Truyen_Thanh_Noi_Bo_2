@@ -24,7 +24,7 @@ interface UnitScore {
 
 
 
-export default function Analytics() {
+export default function Analytics({ onLogout }: { onLogout?: () => void }) {
   const [activeTab, setActiveTab] = useState<'history' | 'frequency' | 'duration' | 'logs'>('history');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [unitScores, setUnitScores] = useState<UnitScore[]>([]);
@@ -55,6 +55,10 @@ export default function Analytics() {
     try {
       const query = new URLSearchParams(filters).toString();
       const res = await fetch(`${API_URL}/analytics/history?${query}`, { headers: getHeaders() });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       if (res.ok) {
         setHistory(await res.json());
       }

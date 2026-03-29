@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Radio, Activity, Signal, Volume2, Globe, Monitor, Search, RefreshCw } from 'lucide-react';
 
 interface Channel {
@@ -19,12 +19,13 @@ interface Device {
   last_seen?: string;
 }
 
-export default function ChannelMonitor() {
+export default function ChannelMonitor({ onLogout }: { onLogout?: () => void }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selectedChannel, setSelectedChannel] = useState<Channel | null>(null);
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const pollInterval = useRef<any>(null);
 
   const getHeaders = () => ({
     'Authorization': `Bearer ${localStorage.getItem('openclaw_token') || ''}`
@@ -33,7 +34,12 @@ export default function ChannelMonitor() {
   const fetchChannels = async () => {
     try {
       const res = await fetch(`http://${window.location.hostname}:3000/channels`, { headers: getHeaders() });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       const data = await res.json();
+      console.log('[DEBUG] Channels fetched:', data);
       if (Array.isArray(data)) {
         setChannels(data);
         if (data.length > 0 && !selectedChannel) {
@@ -65,7 +71,16 @@ export default function ChannelMonitor() {
   useEffect(() => {
     if (selectedChannel) {
       fetchDevicesForChannel(selectedChannel.id);
+
+      // Thiết lập polling 10 giây
+      if (pollInterval.current) clearInterval(pollInterval.current);
+      pollInterval.current = setInterval(() => {
+        fetchDevicesForChannel(selectedChannel.id); // Poll devices instead of schedules
+      }, 10000);
     }
+    return () => {
+      if (pollInterval.current) clearInterval(pollInterval.current);
+    };
   }, [selectedChannel]);
 
   const handlePing = async (deviceId: number) => {
@@ -92,52 +107,51 @@ export default function ChannelMonitor() {
     <div className="animate-fade-in" style={{ height: 'calc(100vh - 180px)', display: 'flex', gap: '20px' }}>
       {/* Sidebar: Channel List */}
       <div style={{ 
-        width: '320px', 
+        width: '280px', 
+        minWidth: '280px',
+        flexShrink: 0,
         background: 'rgba(255, 255, 255, 0.03)', 
-        borderRadius: '20px', 
-        border: '1px solid rgba(255, 255, 255, 0.05)',
+        borderRadius: '24px', 
+        border: '1px solid rgba(255, 255, 255, 0.1)',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        backdropFilter: 'blur(20px)'
       }}>
-        <div style={{ padding: '20px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Radio size={22} color="#6366f1" /> Kênh Truyền
+        <div style={{ padding: '24px 20px', borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
+          <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '10px', color: '#f8fafc' }}>
+            <Radio size={20} color="#818cf8" /> Hệ thống Kênh
           </h3>
-          <p style={{ margin: '5px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>Chọn kênh để giám sát thiết bị</p>
         </div>
         
-        <div style={{ flex: 1, overflowY: 'auto', padding: '10px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }} className="hide-scrollbar">
           {channels.map(channel => (
             <div 
               key={channel.id}
               onClick={() => setSelectedChannel(channel)}
               style={{
-                padding: '15px',
-                borderRadius: '12px',
-                marginBottom: '8px',
+                padding: '12px 16px',
+                borderRadius: '16px',
+                marginBottom: '6px',
                 cursor: 'pointer',
-                transition: 'all 0.3s',
-                background: selectedChannel?.id === channel.id ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-                border: `1px solid ${selectedChannel?.id === channel.id ? 'rgba(99, 102, 241, 0.2)' : 'transparent'}`
+                transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                background: selectedChannel?.id === channel.id ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                border: `1px solid ${selectedChannel?.id === channel.id ? 'rgba(99, 102, 241, 0.3)' : 'transparent'}`,
+                boxShadow: selectedChannel?.id === channel.id ? '0 10px 20px -10px rgba(99, 102, 241, 0.4)' : 'none'
               }}
+              className="hover-scale"
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                <span style={{ fontWeight: 700, color: selectedChannel?.id === channel.id ? '#818cf8' : '#f8fafc' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ 
+                  fontWeight: selectedChannel?.id === channel.id ? 800 : 600, 
+                  color: selectedChannel?.id === channel.id ? '#818cf8' : '#94a3b8',
+                  fontSize: '0.95rem'
+                }}>
                   {channel.name}
                 </span>
-                <span style={{ 
-                  fontSize: '0.6rem', 
-                  padding: '2px 6px', 
-                  borderRadius: '4px', 
-                  background: 'rgba(255,255,255,0.05)',
-                  color: '#94a3b8'
-                }}>
-                  {channel.mount_point}
-                </span>
-              </div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                {channel.unit_name ? `📍 ${channel.unit_name}` : 'Mặc định đơn vị'}
+                {selectedChannel?.id === channel.id && (
+                  <Activity size={12} className="text-blue-400 ani-pulse" />
+                )}
               </div>
             </div>
           ))}
@@ -357,6 +371,9 @@ export default function ChannelMonitor() {
         .refresh-btn:hover {
           transform: rotate(180deg);
           background: rgba(99, 102, 241, 0.2) !important;
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+          display: none;
         }
       `}</style>
     </div>

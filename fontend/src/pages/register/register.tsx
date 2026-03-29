@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { User, Lock, Mail, Radio, Loader2, Award } from 'lucide-react'
+import { User, Lock, Mail, Radio, Loader2, Award, Briefcase, MapPin } from 'lucide-react'
 import axios from 'axios'
 import '../login/loginCSS.css'
 
@@ -12,11 +12,26 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
         email: '',
         password: '',
         full_name: '',
-        rank: ''
+        rank: '',
+        position: '',
+        unit_id: ''
     })
+    const [units, setUnits] = useState<{id: number, name: string}[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const navigate = useNavigate()
+
+    useEffect(() => {
+        const fetchUnits = async () => {
+            try {
+                const res = await axios.get(`${API_BASE_URL}/users/units`)
+                setUnits(res.data)
+            } catch (err) {
+                console.error('Error fetching units:', err)
+            }
+        }
+        fetchUnits()
+    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -24,7 +39,11 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
         setError('')
 
         try {
-            const response = await axios.post(`${API_BASE_URL}/auth/register`, formData)
+            const payload = {
+                ...formData,
+                unit_id: formData.unit_id ? Number(formData.unit_id) : undefined
+            }
+            const response = await axios.post(`${API_BASE_URL}/auth/register`, payload)
             const { token, user } = response.data
             
             // Lưu token và user
@@ -142,6 +161,58 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
                                     boxSizing: 'border-box'
                                 }}
                             />
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Chức vụ</label>
+                        <div style={{ position: 'relative' }}>
+                            <Briefcase size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <input
+                                type="text"
+                                placeholder="Đại đội trưởng, Kỹ thuật viên..."
+                                required
+                                value={formData.position}
+                                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.8rem 1rem 0.8rem 2.5rem',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    color: 'white',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Đơn vị</label>
+                        <div style={{ position: 'relative' }}>
+                            <MapPin size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                            <select
+                                required
+                                value={formData.unit_id}
+                                onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.8rem 1rem 0.8rem 2.5rem',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    color: 'white',
+                                    outline: 'none',
+                                    appearance: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            >
+                                <option value="" disabled style={{ background: '#1e293b' }}>Chọn đơn vị...</option>
+                                {units.map(unit => (
+                                    <option key={unit.id} value={unit.id} style={{ background: '#1e293b' }}>{unit.name}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 

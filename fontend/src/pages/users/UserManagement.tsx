@@ -18,7 +18,8 @@ import {
   Lock,
   Mail,
   AlertTriangle,
-  MoreVertical
+  MoreVertical,
+  Briefcase
 } from 'lucide-react';
 
 const API_URL = `http://${window.location.hostname}:3000`;
@@ -28,6 +29,7 @@ interface StaffUser {
   username: string;
   full_name: string;
   rank: string;
+  position: string;
   email: string;
   role_name: string;
   unit_name: string;
@@ -39,6 +41,7 @@ interface Registration {
   username: string;
   full_name: string;
   rank: string;
+  position: string;
   email: string;
   unit_id: number;
   unit_name: string;
@@ -57,7 +60,7 @@ interface Role {
   description: string;
 }
 
-export default function UserManagement() {
+export default function UserManagement({ user, onLogout }: { user: any, onLogout?: () => void }) {
   const [users, setUsers] = useState<StaffUser[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +81,8 @@ export default function UserManagement() {
     username: '',
     password: '',
     full_name: '',
-    rank: 'Cán bộ',
+    rank: '',
+    position: '',
     email: '',
     role_id: '5',
     unit_id: ''
@@ -107,8 +111,12 @@ export default function UserManagement() {
         fetch(`${API_URL}/users/roles`, { headers })
       ]);
       
-      if (usersRes.status === 401 || usersRes.status === 403) {
-        throw new Error('Bạn không có quyền truy cập dữ liệu này hoặc phiên làm việc đã hết hạn.');
+      if (usersRes.status === 401) {
+        onLogout?.();
+        return;
+      }
+      if (usersRes.status === 403) {
+        throw new Error('Bạn không có quyền truy cập dữ liệu này.');
       }
 
       const usersData = await usersRes.json();
@@ -295,7 +303,8 @@ export default function UserManagement() {
       username: '',
       password: '',
       full_name: '',
-      rank: 'Cán bộ',
+      rank: '',
+      position: '',
       email: '',
       role_id: '5',
       unit_id: units[0]?.id?.toString() || ''
@@ -316,6 +325,7 @@ export default function UserManagement() {
       password: '', // Don't show password hash
       full_name: user.full_name,
       rank: user.rank,
+      position: user.position,
       email: user.email,
       role_id: roles.find(r => r.name === user.role_name)?.id?.toString() || '5',
       unit_id: units.find(u => u.name === user.unit_name)?.id?.toString() || ''
@@ -327,8 +337,22 @@ export default function UserManagement() {
   const filteredUsers = users.filter(u => 
     u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.unit_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    u.unit_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.rank?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.position?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+  
+  const getRoleDisplayName = (roleName: string) => {
+    const mapping: Record<string, string> = {
+      'admin': 'Quản trị viên',
+      'technician': 'Kỹ thuật viên',
+      'commander': 'Ban chỉ huy',
+      'editor': 'Biên tập viên',
+      'broadcaster': 'Phát thanh viên',
+      'listener': 'Thành viên'
+    };
+    return mapping[roleName?.toLowerCase()] || roleName;
+  };
 
   const formatSafeDate = (dateStr: string | undefined) => {
     if (!dateStr) return '--/--/----';
@@ -340,7 +364,9 @@ export default function UserManagement() {
   const filteredRegistrations = registrations.filter(r => 
     r.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.unit_name?.toLowerCase().includes(searchTerm.toLowerCase())
+    r.unit_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.rank?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    r.position?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   // Pagination Logic
@@ -480,7 +506,7 @@ export default function UserManagement() {
             <Search size={18} style={{ marginLeft: '16px', color: '#64748b', flexShrink: 0 }} />
             <input
               type="text"
-              placeholder={view === 'list' ? "Tìm kiếm nhân sự theo tên, số hiệu hoặc đơn vị..." : "Tìm kiếm yêu cầu phê duyệt..."}
+              placeholder={view === 'list' ? "Tìm kiếm nhân sự theo tên, số hiệu, cấp bậc, chức vụ hoặc đơn vị..." : "Tìm kiếm yêu cầu phê duyệt..."}
               value={searchTerm}
               onChange={handleSearchChange}
               style={{
@@ -593,7 +619,8 @@ export default function UserManagement() {
               />
             </div>
             <span style={{ width: '60px' }}>ID</span>
-            <span style={{ flex: 2 }}>{view === 'list' ? 'Họ tên & Cấp bậc' : 'Thông tin đăng ký'}</span>
+            <span style={{ flex: 1.5 }}>Thành viên</span>
+            <span style={{ flex: 1.5 }}>Cấp bậc / Chức vụ</span>
             <span style={{ flex: 1.5 }}>Đơn vị</span>
             <span style={{ flex: 1 }}>{view === 'list' ? 'Chức vụ (Vai trò)' : 'Trạng thái'}</span>
             <span style={{ flex: 1 }}>{view === 'list' ? 'Ngày tham gia' : 'Ngày yêu cầu'}</span>
@@ -638,7 +665,7 @@ export default function UserManagement() {
                   <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
                     #{item.id}
                   </div>
-                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ 
                       width: '40px', 
                       height: '40px', 
@@ -653,10 +680,15 @@ export default function UserManagement() {
                     </div>
                     <div>
                       <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9' }}>{item.full_name}</p>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>{item.rank} • @{item.username}</p>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>@{item.username}</p>
                     </div>
                   </div>
                   
+                  <div style={{ flex: 1.5, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span style={{ fontWeight: 500, color: '#e2e8f0' }}>{item.rank || 'Chưa cập nhật'}</span>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{item.position || 'Chưa cập nhật'}</span>
+                  </div>
+
                   <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '8px', color: '#cbd5e1', fontSize: '0.9rem' }}>
                     <MapPin size={14} color="#64748b" />
                     {item.unit_name || 'Chưa xác định'}
@@ -673,7 +705,7 @@ export default function UserManagement() {
                         fontWeight: 700,
                         textTransform: 'uppercase'
                       }}>
-                        {item.role_name}
+                        {getRoleDisplayName(item.role_name)}
                       </span>
                     ) : (
                       <span style={{ color: '#f97316', fontSize: '0.8rem', fontWeight: 600 }}>Chờ duyệt</span>
@@ -761,7 +793,7 @@ export default function UserManagement() {
                           }}
                         >
                           {roles.map(r => (
-                            <option key={r.id} value={r.id} style={{ background: '#1e293b' }}>{r.name}</option>
+                            <option key={r.id} value={r.id} style={{ background: '#1e293b' }}>{getRoleDisplayName(r.name)}</option>
                           ))}
                         </select>
                         <button 
@@ -980,6 +1012,17 @@ export default function UserManagement() {
                     onChange={(e) => setFormData({ ...formData, rank: e.target.value })}
                   />
                 </div>
+                <div className="premium-form-group">
+                  <label className="premium-label"><Briefcase size={14} /> Chức vụ</label>
+                  <input
+                    type="text"
+                    required
+                    className="premium-input"
+                    placeholder="VD: Đại đội trưởng"
+                    value={formData.position}
+                    onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
@@ -1041,11 +1084,17 @@ export default function UserManagement() {
                     required
                     value={formData.role_id}
                     onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}
+                    disabled={user?.role_name !== 'admin'}
                   >
                     {roles.map(role => (
-                      <option key={role.id} value={role.id}>{role.description || role.name}</option>
+                      <option key={role.id} value={role.id}>{getRoleDisplayName(role.name)}</option>
                     ))}
                   </select>
+                  {user?.role_name !== 'admin' && (
+                    <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '6px', fontWeight: 500 }}>
+                      * Chỉ Quản trị viên mới có quyền thay đổi vai trò hệ thống.
+                    </p>
+                  )}
                 </div>
               </div>
 

@@ -11,15 +11,17 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       let query = `
         SELECT 
           s.id, s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
-          s.channel_id, s.content_id,
+          s.channel_id, s.content_id, s.radio_id,
           s.triggered_at,
           c.name as channel_name, c.mount_point,
           ci.title as content_title,
           u.full_name as author_name,
-          EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio
+          r.name as radio_name,
+          (EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) OR s.radio_id IS NOT NULL) as has_audio
         FROM broadcast_schedules s
         LEFT JOIN channels c ON s.channel_id = c.id
         LEFT JOIN content_items ci ON s.content_id = ci.id
+        LEFT JOIN radios r ON s.radio_id = r.id
         LEFT JOIN users u ON ci.author_id = u.id
         WHERE 1=1
       `;
@@ -44,7 +46,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
             c.name as channel_name, c.mount_point,
             ci.title as content_title,
             u.full_name as author_name,
-            EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio
+            (EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) OR s.radio_id IS NOT NULL) as has_audio
           FROM broadcast_schedules s
           LEFT JOIN channels c ON s.channel_id = c.id
           LEFT JOIN content_items ci ON s.content_id = ci.id
@@ -69,9 +71,10 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       SELECT 
         s.id as schedule_id,
         s.scheduled_time, s.duration, s.repeat_pattern, s.is_active,
-        s.channel_id, s.content_id, s.triggered_at,
+        s.channel_id, s.content_id, s.radio_id, s.triggered_at,
         c.name as channel_name, c.mount_point,
         ci.title as content_title, ci.id as content_item_id,
+        r.name as radio_name, r.id as radio_id_from_table,
         u.full_name as author_name,
         EXISTS (SELECT 1 FROM media_files mf WHERE mf.content_id = s.content_id) as has_audio,
         CASE 
@@ -81,9 +84,10 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
         END as play_status
       FROM broadcast_schedules s
       LEFT JOIN channels c ON s.channel_id = c.id
-      JOIN content_items ci ON s.content_id = ci.id
+      LEFT JOIN content_items ci ON s.content_id = ci.id
+      LEFT JOIN radios r ON s.radio_id = r.id
       LEFT JOIN users u ON ci.author_id = u.id
-      WHERE ci.status IN ('approved', 'published')
+      WHERE (ci.status IN ('approved', 'published') OR s.radio_id IS NOT NULL)
     `;
     const values: any[] = [];
     if (user.role_name !== 'admin') {
@@ -99,9 +103,10 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       if (!groupedMap.has(row.content_item_id)) {
         groupedMap.set(row.content_item_id, {
           content_id: row.content_item_id,
-          content_title: row.content_title,
-          author_name: row.author_name,
-          has_audio: row.has_audio,
+          radio_id: row.radio_id,
+          content_title: row.radio_name ? `Radio: ${row.radio_name}` : row.content_title,
+          author_name: row.author_name || 'Hệ thống',
+          has_audio: row.has_audio || !!row.radio_id,
           schedules: []
         });
       }
@@ -124,11 +129,11 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
 
   // 2. Create new schedule (also used by popup "+ Thêm giờ phát")
   fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
-    const { channel_id, content_id, scheduled_time, duration, repeat_pattern } = request.body as any;
+    const { channel_id, content_id, radio_id, scheduled_time, duration, repeat_pattern } = request.body as any;
     const user = request.user;
     
-    if (!channel_id || !content_id || !scheduled_time) {
-      return reply.code(400).send({ error: 'channel_id, content_id và scheduled_time là bắt buộc' });
+    if (!channel_id || (!content_id && !radio_id) || !scheduled_time) {
+      return reply.code(400).send({ error: 'channel_id, (content_id hoặc radio_id) và scheduled_time là bắt buộc' });
     }
 
     // Security Check: Ensure channel belongs to user's unit
@@ -140,18 +145,18 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
     }
 
     const query = `
-      INSERT INTO broadcast_schedules (channel_id, content_id, scheduled_time, duration, repeat_pattern)
-      VALUES ($1, $2, $3, $4, $5)
+      INSERT INTO broadcast_schedules (channel_id, content_id, radio_id, scheduled_time, duration, repeat_pattern)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `;
-    const result = await fastify.pg.query(query, [channel_id, content_id, scheduled_time, duration || null, repeat_pattern || 'none']);
+    const result = await fastify.pg.query(query, [channel_id, content_id || null, radio_id || null, scheduled_time, duration || null, repeat_pattern || 'none']);
     
     // ... rest of the code ...
 
     // Return with channel name for immediate UI update
     const enriched = await fastify.pg.query(`
       SELECT 
-        s.*, c.name as channel_name,
+        s.*, c.name as channel_name, r.name as radio_name,
         CASE 
           WHEN s.triggered_at IS NOT NULL THEN 'played'
           WHEN s.scheduled_time <= NOW() THEN 'overdue'
@@ -159,6 +164,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
         END as play_status
       FROM broadcast_schedules s
       LEFT JOIN channels c ON s.channel_id = c.id
+      LEFT JOIN radios r ON s.radio_id = r.id
       WHERE s.id = $1
     `, [result.rows[0].id]);
 
@@ -168,7 +174,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   // 3. Update schedule
   fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
-    const { channel_id, content_id, scheduled_time, duration, repeat_pattern, is_active } = request.body as any;
+    const { channel_id, content_id, radio_id, scheduled_time, duration, repeat_pattern, is_active } = request.body as any;
     const user = request.user;
 
     const client = await fastify.pg.connect();
@@ -190,15 +196,16 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
         UPDATE broadcast_schedules 
         SET 
           channel_id = COALESCE($1, channel_id),
-          content_id = COALESCE($2, content_id),
-          scheduled_time = COALESCE($3, scheduled_time),
-          duration = COALESCE($4, duration),
-          repeat_pattern = COALESCE($5, repeat_pattern),
-          is_active = COALESCE($6, is_active)
-        WHERE id = $7
+          content_id = $2,
+          radio_id = $3,
+          scheduled_time = COALESCE($4, scheduled_time),
+          duration = COALESCE($5, duration),
+          repeat_pattern = COALESCE($6, repeat_pattern),
+          is_active = COALESCE($7, is_active)
+        WHERE id = $8
         RETURNING *
       `;
-      const result = await client.query(query, [channel_id, content_id, scheduled_time, duration, repeat_pattern, is_active, id]);
+      const result = await client.query(query, [channel_id, content_id === undefined ? undefined : content_id, radio_id === undefined ? undefined : radio_id, scheduled_time, duration, repeat_pattern, is_active, id]);
       return result.rows[0];
     } finally {
       client.release();
@@ -236,13 +243,15 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       // Get broadcast info for WebSocket trigger
       const queryInfo = `
         SELECT 
-          s.id, s.scheduled_time, s.channel_id,
+          s.id, s.scheduled_time, s.channel_id, s.content_id, s.radio_id, s.duration,
           c.name as channel_name, c.mount_point,
           ci.title as content_title,
-          mf.file_path, mf.file_name
+          mf.file_path, mf.file_name,
+          r.name as radio_name, r.url as radio_url
         FROM broadcast_schedules s
         JOIN channels c ON s.channel_id = c.id
-        JOIN content_items ci ON s.content_id = ci.id
+        LEFT JOIN content_items ci ON s.content_id = ci.id
+        LEFT JOIN radios r ON s.radio_id = r.id
         LEFT JOIN media_files mf ON ci.id = mf.content_id
         WHERE s.id = $1
         LIMIT 1
@@ -251,24 +260,31 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       const broadcastInfo = infoResult.rows[0];
       
       // Trigger via WebSocket
-      if ((fastify as any).broadcast) {
+      if ((fastify as any).broadcast && broadcastInfo) {
+        const isRadio = !!broadcastInfo.radio_id;
         (fastify as any).broadcast({
           type: 'broadcast-start',
-          channel_id: broadcastInfo?.channel_id,
+          channel_id: broadcastInfo.channel_id,
           schedule_id: id,
-          title: broadcastInfo?.content_title || 'Bản tin mới',
-          channel: broadcastInfo?.channel_name || 'Kênh mặc định',
-          mount_point: broadcastInfo?.mount_point,
-          file_url: broadcastInfo?.file_path ? getFullURL(`uploads/${broadcastInfo.file_path}`) : null,
-          user: user.full_name || 'Admin'
+          title: isRadio ? `Radio: ${broadcastInfo.radio_name}` : (broadcastInfo.content_title || 'Bản tin mới'),
+          channel: broadcastInfo.channel_name || 'Kênh mặc định',
+          mount_point: broadcastInfo.mount_point,
+          file_url: isRadio 
+            ? broadcastInfo.radio_url 
+            : (broadcastInfo.file_path ? getFullURL(`uploads/${broadcastInfo.file_path}`) : null),
+          is_radio: isRadio,
+          user: user.full_name || 'Admin',
+          scheduled: true
         });
       }
       
       // Log into broadcast_sessions
-      await client.query(`
-        INSERT INTO broadcast_sessions (schedule_id, content_id, channel_id, start_time, duration, status)
-        VALUES ($1, $2, $3, NOW(), COALESCE($4, 300), 'completed')
-      `, [id, broadcastInfo?.content_id, broadcastInfo?.channel_id, broadcastInfo?.duration]);
+      if (broadcastInfo) {
+        await client.query(`
+          INSERT INTO broadcast_sessions (schedule_id, content_id, radio_id, channel_id, start_time, duration, status)
+          VALUES ($1, $2, $3, $4, NOW(), COALESCE($5, 300), 'completed')
+        `, [id, broadcastInfo.content_id, broadcastInfo.radio_id, broadcastInfo.channel_id, broadcastInfo.duration]);
+      }
 
       return { 
         message: 'Broadcast triggered successfully', 
@@ -347,6 +363,69 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
 
     return { 
       message: `Đã kích hoạt phát sóng trên ${chanResult.rowCount} kênh: ${triggeredChannels.join(', ')}`,
+      channels: triggeredChannels
+    };
+  });
+
+  // 4c. Play All Channels for a Radio (Outside Action)
+  fastify.post('/radio/:radioId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
+    const { radioId } = request.params;
+    
+    // 1. Find all channels that have this radio scheduled
+    const queryChannels = `
+      SELECT DISTINCT ON (s.channel_id) 
+             s.channel_id, c.name as channel_name, c.mount_point,
+             r.name as radio_name, r.url as radio_url
+      FROM broadcast_schedules s
+      JOIN channels c ON s.channel_id = c.id
+      JOIN radios r ON s.radio_id = r.id
+      WHERE s.radio_id = $1
+        AND s.is_active = true
+      ORDER BY s.channel_id
+    `;
+    const chanResult = await fastify.pg.query(queryChannels, [radioId]);
+    
+    if (chanResult.rowCount === 0) {
+      return reply.code(404).send({ error: 'Không tìm thấy kênh nào có lịch phát radio này trong hôm nay.' });
+    }
+
+    const triggeredChannels: string[] = [];
+    
+    // 2. Trigger broadcast for each channel
+    for (const channelInfo of chanResult.rows) {
+      if ((fastify as any).broadcast && channelInfo.radio_url) {
+        (fastify as any).broadcast({
+          type: 'broadcast-start',
+          channel_id: channelInfo.channel_id,
+          title: `Radio: ${channelInfo.radio_name}`,
+          channel: channelInfo.channel_name || 'Kênh mặc định',
+          mount_point: channelInfo.mount_point,
+          file_url: channelInfo.radio_url,
+          is_radio: true,
+          user: (request.user as any)?.full_name || 'Admin',
+          scheduled: true
+        });
+        triggeredChannels.push(channelInfo.channel_name);
+      }
+    }
+
+    // 3. Update triggered_at for these schedules
+    await fastify.pg.query(`
+      UPDATE broadcast_schedules
+      SET triggered_at = NOW()
+      WHERE radio_id = $1
+    `, [radioId]);
+
+    // 4. Log into broadcast_sessions for each triggered channel
+    for (const channelInfo of chanResult.rows) {
+      await fastify.pg.query(`
+        INSERT INTO broadcast_sessions (radio_id, channel_id, start_time, duration, status)
+        VALUES ($1, $2, NOW(), 300, 'completed')
+      `, [radioId, channelInfo.channel_id]);
+    }
+
+    return { 
+      message: `Đã kích hoạt phát Radio trên ${chanResult.rowCount} kênh: ${triggeredChannels.join(', ')}`,
       channels: triggeredChannels
     };
   });

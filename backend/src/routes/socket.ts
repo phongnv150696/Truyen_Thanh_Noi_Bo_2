@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { WebSocket } from 'ws';
 import fp from 'fastify-plugin';
+import axios from 'axios';
 
 // Store connected clients with metadata
 const clients = new Map<WebSocket, { channel_id?: number, device_id?: number }>();
@@ -60,6 +61,30 @@ async function updateBroadcastLog(fastify: FastifyInstance, deviceId: number, st
   }
 }
 
+// Helper to trigger broadcast on XiaoZhi server (Python)
+async function triggerXiaoZhiBroadcast(fastify: FastifyInstance, data: any) {
+  const { type, channel_id, file_url, title } = data;
+  if (!['broadcast-start', 'emergency-start'].includes(type)) return;
+  if (!file_url) return;
+
+  try {
+    const pythonUrl = "http://127.0.0.1:8003/xiaozhi/broadcast";
+    fastify.log.info(`[XiaoZhi Bridge] Triggering broadcast on Python server: ${title}`);
+    
+    // We don't await this to keep the WebSocket response fast
+    axios.post(pythonUrl, {
+      media_url: file_url,
+      channel_id: channel_id || 0,
+      title: title || 'Thông báo',
+      is_emergency: type === 'emergency-start'
+    }, { timeout: 3000 }).catch(err => {
+      fastify.log.warn(`[XiaoZhi Bridge] Python server unreachable or error: ${err.message}`);
+    });
+  } catch (err: any) {
+    fastify.log.error(`[XiaoZhi Bridge] Failed to send trigger: ${err.message}`);
+  }
+}
+
 async function socketRoutes(fastify: FastifyInstance) {
   fastify.log.info('Registering Socket Routes...');
 
@@ -80,6 +105,8 @@ async function socketRoutes(fastify: FastifyInstance) {
       // Log start if it's a broadcast start message
       if (data.type === 'broadcast-start' || data.type === 'emergency-start') {
         await logBroadcastStart(fastify, data);
+        // NEW: Trigger XiaoZhi Python Server
+        triggerXiaoZhiBroadcast(fastify, data);
       }
 
       clients.forEach((metadata, socket) => {

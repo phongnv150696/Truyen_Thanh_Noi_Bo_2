@@ -23,6 +23,8 @@ import socketRoutes from './routes/socket.js';
 import profileRoutes from './routes/profile.js';
 import analyticsRoutes from './routes/analytics.js';
 import reportRoutes from './routes/reports.js';
+import radioRoutes from './routes/radios.js';
+
 import { startScheduler } from './scheduler.js';
 import 'dotenv/config';
 
@@ -123,6 +125,8 @@ async function setupServer() {
     await server.register(analyticsRoutes, { prefix: '/analytics' });
     await server.register(reportRoutes, { prefix: '/reports' });
     await server.register(profileRoutes, { prefix: '/profile' });
+    await server.register(radioRoutes, { prefix: '/radios' });
+
 
     // Root route
     server.get('/', async () => {

@@ -43,7 +43,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
     const client = await fastify.pg.connect();
     try {
       const { rows } = await client.query(
-        'INSERT INTO devices (name, type, ip_address, unit_id, channel_id, status) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        'INSERT INTO devices (name, type, ip_address, unit_id, channel_id, status, last_seen) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
         [name, type || 'speaker', ip_address, unit_id, channel_id, 'offline']
       );
       return rows[0];
@@ -158,6 +158,56 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
     } catch (err) {
       fastify.log.error(err);
       return reply.code(500).send({ error: 'Failed to delete devices' });
+    } finally {
+      client.release();
+    }
+  });
+
+  // Register or Update XiaoZhi device (Internal API called by Python Server)
+  fastify.post('/register-xiaozhi', async (request: any, reply) => {
+    const { device_id, name, ip_address, type } = request.body;
+    
+    // Validate from 127.0.0.1 for security if needed
+    // const remoteIp = request.ip;
+    
+    const client = await fastify.pg.connect();
+    try {
+      // 1. Check if device exists (using device_id as a unique identifier/serial)
+      const existing = await client.query('SELECT id FROM devices WHERE ip_address = $1 OR name = $2', [ip_address, `XiaoZhi-${device_id}`]);
+      
+      let device;
+      if (existing.rows.length > 0) {
+        // Update status and last_seen
+        const { rows } = await client.query(
+          'UPDATE devices SET status = $1, last_seen = NOW(), ip_address = $2 WHERE id = $3 RETURNING *',
+          ['online', ip_address, existing.rows[0].id]
+        );
+        device = rows[0];
+      } else {
+        // Create new device (Default to first unit/channel if none specified, or let user assign later)
+        // For simplicity, we find the first unit.
+        const unitRes = await client.query('SELECT id FROM units LIMIT 1');
+        const channelRes = await client.query('SELECT id FROM channels LIMIT 1');
+        const unitId = unitRes.rows[0]?.id || 1;
+        const channelId = channelRes.rows[0]?.id || 1;
+
+        const { rows } = await client.query(
+          'INSERT INTO devices (name, type, ip_address, unit_id, channel_id, status, last_seen) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+          [name || `Loa XiaoZhi [${device_id}]`, type || 'xiaozhi-speaker', ip_address, unitId, channelId, 'online']
+        );
+        device = rows[0];
+      }
+      
+      // Broadcast update via WebSocket to frontend
+      fastify.broadcast({
+        type: 'device_status_update',
+        device: device
+      });
+
+      return { success: true, device };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.code(500).send({ error: 'Failed to register XiaoZhi device' });
     } finally {
       client.release();
     }

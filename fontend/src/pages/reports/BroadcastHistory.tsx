@@ -1,21 +1,16 @@
 import { useState, useEffect } from 'react';
 import { 
-  Search, 
-  Filter, 
   Download, 
   Calendar as CalendarIcon, 
   Radio, 
   CheckCircle2, 
   XCircle, 
-  Clock, 
-  LayoutGrid,
-  ChevronRight,
   RefreshCw,
   MoreVertical,
   Activity
 } from 'lucide-react';
 
-const BroadcastHistory = () => {
+const BroadcastHistory = ({ onLogout }: { onLogout?: () => void }) => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -60,6 +55,10 @@ const BroadcastHistory = () => {
       const res = await fetch(`http://${window.location.hostname}:3000/reports/history?${queryParams}`, {
         headers: getHeaders()
       });
+      if (res.status === 401) {
+        onLogout?.();
+        return;
+      }
       const data = await res.json();
       setHistory(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -89,16 +88,6 @@ const BroadcastHistory = () => {
     }
   };
 
-  const formatDateTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString('vi-VN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
-  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
