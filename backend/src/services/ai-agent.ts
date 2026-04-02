@@ -76,34 +76,54 @@ export class AIAgentService {
   }
 
   /**
-   * Analyzes content for policy compliance and sentiment.
+   * Analyzes content for policy compliance, sentiment, and technical quality.
    */
   async analyzeContentPolicy(text: string) {
+    if (!text) return { hasViolations: false, score: 0, feedback: 'Nội dung rỗng' };
+
     const forbiddenWords = ['tệ nạn', 'cờ bạc', 'rượu chè', 'bỏ ngũ', 'vắng mặt trái phép'];
-    const slangWords = ['vcl', 'đcm', 'cl', 'vl'];
+    const politicalWords = ['phản động', 'biểu tình', 'bạo động', 'xuyên tạc'];
+    const securityWords = ['mật mã', 'tọa độ', 'đặc công', 'bí mật quân sự'];
+    const slangWords = ['vcl', 'đcm', 'cl', 'vl', 'đéo'];
     
-    const highlightedWords: string[] = [];
+    const violations: { word: string, category: string }[] = [];
     const lowerText = text.toLowerCase();
     
-    for (const word of forbiddenWords) {
-      if (lowerText.includes(word)) highlightedWords.push(word);
-    }
-    
-    for (const word of slangWords) {
-      if (lowerText.includes(word)) highlightedWords.push(word);
+    const checkList = [
+      { list: forbiddenWords, cat: 'Kỷ luật' },
+      { list: politicalWords, cat: 'Chính trị' },
+      { list: securityWords, cat: 'An ninh' },
+      { list: slangWords, cat: 'Văn hóa' }
+    ];
+
+    for (const item of checkList) {
+      for (const word of item.list) {
+        if (lowerText.includes(word)) {
+          violations.push({ word, category: item.cat });
+        }
+      }
     }
 
-    const uniqueViolations = Array.from(new Set(highlightedWords));
+    const uniqueViolations = violations.filter((v, i, a) => a.findIndex(t => t.word === v.word) === i);
     const hasViolations = uniqueViolations.length > 0;
-    const sentiment = text.length > 500 ? 'neutral' : (text.includes('Chúc mừng') ? 'positive' : 'neutral');
+    
+    // Calculate Quality Score (0-100)
+    let score = 100;
+    if (text.length < 50) score -= 30; // Too short
+    if (!text.includes('Kính thưa') && !text.includes('Chào')) score -= 10; // Missing greeting
+    if (hasViolations) score -= (uniqueViolations.length * 20);
+    score = Math.max(0, score);
+
+    const sentiment = text.includes('Chúc mừng') || text.includes('tốt đẹp') ? 'positive' : 'neutral';
 
     return {
       hasViolations,
       violations: uniqueViolations,
       sentiment,
+      score,
       feedback: hasViolations 
-        ? `Lưu ý: Phát hiện ${uniqueViolations.length} nhóm từ ngữ cần sửa đổi (đã được đánh dấu) để phù hợp với quy phạm quân chính.`
-        : 'Nội dung đảm bảo tính chính quy, phù hợp với môi trường quân đội.'
+        ? `CẢNH BÁO: Phát hiện ${uniqueViolations.length} nhóm từ nhạy cảm (${uniqueViolations.map(v => v.category).join(', ')}). Cần rà soát kỹ.`
+        : (score > 80 ? 'Nội dung đảm bảo tính chính quy, đạt chất lượng tốt.' : 'Nội dung ổn nhưng cần bổ sung thêm các yếu tố chào hỏi/chi tiết.')
     };
   }
 

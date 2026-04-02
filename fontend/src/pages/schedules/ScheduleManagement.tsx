@@ -91,6 +91,8 @@ function ScheduleDetailPopup({
   onUpdateSlot,
   onDeleteSlot,
   onPlayNow,
+  onStopBroadcast,
+  activeBroadcast,
   isReadOnly = false,
   selectedDate = 'all'
 }: {
@@ -101,6 +103,8 @@ function ScheduleDetailPopup({
   onUpdateSlot: (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string, duration?: number) => Promise<void>;
   onDeleteSlot: (scheduleId: number) => Promise<void>;
   onPlayNow: (scheduleId: number) => Promise<void>;
+  onStopBroadcast: () => void;
+  activeBroadcast: any;
   isReadOnly?: boolean;
   selectedDate?: string;
 }) {
@@ -122,7 +126,12 @@ function ScheduleDetailPopup({
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, scheduleId?: number) => {
+    if (activeBroadcast && scheduleId && activeBroadcast.schedule_id === scheduleId) return (
+      <span style={{ padding: '4px 10px', borderRadius: '10px', background: 'rgba(59,130,246,0.1)', color: '#60a5fa', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(59,130,246,0.1)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <RefreshCw size={10} className="animate-spin" /> Đang phát
+      </span>
+    );
     if (status === 'played') return (
       <span style={{ padding: '4px 10px', borderRadius: '10px', background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: '0.65rem', fontWeight: 800, border: '1px solid rgba(16,185,129,0.1)', letterSpacing: '0.5px', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <CheckCircle2 size={10} /> Đã phát
@@ -274,8 +283,25 @@ function ScheduleDetailPopup({
                 <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Giờ Bắt đầu</label>
                 <input type="time" required value={extractTime(newTime)} onChange={e => {
                   const time = e.target.value;
-                  const baseDate = (selectedDate && selectedDate !== 'all') ? selectedDate : new Date().toISOString().split('T')[0];
-                  setNewTime(`${baseDate}T${time}:00`);
+                  
+                  // Use local timezone base date
+                  let baseDate = selectedDate && selectedDate !== 'all' ? selectedDate : '';
+                  if (!baseDate) {
+                     const now = new Date();
+                     baseDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                  }
+
+                  try {
+                    // Combine base date and time in local timezone, then convert to UTC ISO
+                    const localDateObj = new Date(`${baseDate}T${time}:00`);
+                    if (!isNaN(localDateObj.getTime())) {
+                       setNewTime(localDateObj.toISOString());
+                    } else {
+                       setNewTime(`${baseDate}T${time}:00`);
+                    }
+                  } catch (err) {
+                    setNewTime(`${baseDate}T${time}:00`);
+                  }
                 }} className="premium-input" style={{ width: '100%', height: '42px' }} />
               </div>
               <div>
@@ -325,16 +351,25 @@ function ScheduleDetailPopup({
                                : '--:--'}
                           </div>
                         </div>
-                        {getStatusBadge(s.play_status)}
+                        {getStatusBadge(s.play_status, s.schedule_id)}
                       </div>
                       {!isReadOnly && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button onClick={() => startEdit(s)} className="hover-scale" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Edit3 size={13} />
                           </button>
-                          <button onClick={() => onPlayNow(s.schedule_id)} className="hover-scale" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', color: '#10b981', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Play size={13} fill="#10b981" />
-                          </button>
+                          {activeBroadcast?.schedule_id === s.schedule_id ? (
+                            <button onClick={onStopBroadcast} className="hover-scale ani-pulse" style={{ background: '#ef4444', border: 'none', color: 'white', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <div style={{ display: 'flex', gap: '2px' }}>
+                                <div style={{ width: '3.5px', height: '12px', background: 'white', borderRadius: '1px' }} />
+                                <div style={{ width: '3.5px', height: '12px', background: 'white', borderRadius: '1px' }} />
+                              </div>
+                            </button>
+                          ) : (
+                            <button onClick={() => onPlayNow(s.schedule_id)} className="hover-scale" style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', color: '#10b981', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Play size={13} fill="#10b981" />
+                            </button>
+                          )}
                           <button onClick={() => onDeleteSlot(s.schedule_id)} className="hover-scale" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#ef4444', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             <Trash2 size={13} />
                           </button>
@@ -353,7 +388,17 @@ function ScheduleDetailPopup({
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function ScheduleManagement({ onLogout }: { onLogout?: () => void }) {
+export default function ScheduleManagement({ 
+  onLogout, 
+  activeBroadcast, 
+  onStopBroadcast, 
+  onStartBroadcast 
+}: { 
+  onLogout?: () => void;
+  activeBroadcast?: any;
+  onStopBroadcast?: () => void;
+  onStartBroadcast?: (data: any) => void;
+}) {
   const [groupedContents, setGroupedContents] = useState<GroupedContent[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [contents, setContents] = useState<ContentItem[]>([]);
@@ -511,17 +556,25 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
     try {
       const res = await fetch(`${API_URL}/schedules/${scheduleId}/play`, { method: 'POST', headers: getHeaders() });
       if (res.ok) {
+        const data = await res.json();
+        console.log('Play Now Success:', data);
+        if (onStartBroadcast && data.broadcast) {
+           onStartBroadcast(data.broadcast);
+        }
         alert('Đã gửi lệnh phát sóng thành công!');
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
         alert('Lỗi: ' + (e.error || 'Máy chủ phục vụ từ chối lệnh phát.'));
       }
-    } catch { alert('Lỗi kết nối máy chủ'); }
+    } catch (err) { 
+      console.error('Play Now Error:', err);
+      alert('Lỗi kết nối máy chủ'); 
+    }
     finally { setProcessingId(null); }
   };
 
-  const handlePlayAllChannels = async (contentId: number | null, radioId?: number | null) => {
+  const handlePlayAllChannels = async (contentId: number | null, radioId?: number | null, title?: string) => {
     if (!confirm('Bạn có chắc chắn muốn phát nội dung này trên TẤT CẢ các kênh có lịch trong hôm nay?')) return;
     const groupKey = contentId ? `c${contentId}` : `r${radioId}`;
     if (!groupKey) return;
@@ -536,11 +589,21 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
       });
       if (res.ok) {
         const data = await res.json();
+        if (onStartBroadcast && data.channels && data.channels.length > 0) {
+          // Trigger a generic "All Channels" broadcast card
+          onStartBroadcast({
+            title: title || 'Phát sóng đa kênh',
+            channel: `Đang phát trên ${data.channels.length} kênh`,
+            user: 'Hệ thống',
+            content_id: contentId,
+            radio_id: radioId
+          });
+        }
         alert(data.message || 'Đã gửi lệnh phát sóng đa kênh thành công!');
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
-        alert('Lỗi: ' + (e.error || 'Máy chủ từ chối lệnh phát.'));
+        alert('Lỗi: ' + (e.error || 'Máy chủ phục vụ từ chối lệnh phát.'));
       }
     } catch { alert('Lỗi kết nối máy chủ'); }
     finally { setProcessingId(null); }
@@ -913,15 +976,25 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
           <button
             onClick={() => {
               const now = new Date();
-              const baseDate = selectedDate === 'all' ? now.toISOString().split('T')[0] : selectedDate;
-              // Combine baseDate with current time HH:mm
+              let baseDate = selectedDate === 'all' ? now.toISOString().split('T')[0] : selectedDate;
+              // If baseDate is UTC date from now.toISOString(), it might be yesterday if it's early morning locally.
+              // Use local date instead:
+              if (selectedDate === 'all') {
+                baseDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+              }
               const pad = (n: number) => String(n).padStart(2, '0');
-              const dateTimeForInput = `${baseDate}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+              const localTimeStr = `${baseDate}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+              
+              let utcIsoString = localTimeStr;
+              try {
+                const dt = new Date(localTimeStr);
+                if (!isNaN(dt.getTime())) utcIsoString = dt.toISOString();
+              } catch(e) {}
 
               setNewSchedule({
-                channel_id: channels[0]?.id || '',
+                channel_id: channels.length > 0 ? channels[0].id.toString() : '',
                 content_id: '',
-                scheduled_time: dateTimeForInput,
+                scheduled_time: utcIsoString,
                 repeat_pattern: 'none'
               });
               setContentSearchQuery('');
@@ -1030,7 +1103,7 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
                         <Plus size={16} />
                       </button>
 
-                      {/* 🗑 Xóa tất cả lịch */}
+                      {/* 🗑 Xóa tất cả lịch phát */}
                       <button
                         onClick={() => handleDeleteContent(item.content_id, item.radio_id)}
                         title="Xóa tất cả lịch phát"
@@ -1070,20 +1143,36 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
                                 <Plus size={14} />
                                 <span>Sửa lịch phát</span>
                               </button>
-                            <button
-                              onClick={() => {
-                                setMenuOpenId(null);
-                                if (!item.has_audio) {
-                                  alert('Bản tin này hiện chưa được gán file âm thanh, không thể phát đa kênh. Vui lòng cập nhật âm thanh trước.');
-                                  return;
-                                }
-                                handlePlayAllChannels(item.content_id, item.radio_id);
-                              }}
-                              style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: item.has_audio ? '#10b981' : '#475569', cursor: item.has_audio ? 'pointer' : 'not-allowed', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
-                            >
-                              {processingId === groupKey ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
-                              <span>Phát ngay (Tất cả kênh)</span>
-                            </button>
+                            {activeBroadcast && (activeBroadcast.content_id === item.content_id || activeBroadcast.radio_id === item.radio_id) ? (
+                              <button
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  onStopBroadcast?.();
+                                }}
+                                style={{ width: '100%', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', cursor: 'pointer', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 800, textAlign: 'left' }}
+                              >
+                                <div style={{ display: 'flex', gap: '2px' }}>
+                                  <div style={{ width: '3.5px', height: '14px', background: '#ef4444', borderRadius: '1px' }} />
+                                  <div style={{ width: '3.5px', height: '14px', background: '#ef4444', borderRadius: '1px' }} />
+                                </div>
+                                <span style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dừng phát toàn bộ</span>
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  if (!item.has_audio) {
+                                    alert('Bản tin này hiện chưa được gán file âm thanh, không thể phát đa kênh. Vui lòng cập nhật âm thanh trước.');
+                                    return;
+                                  }
+                                  handlePlayAllChannels(item.content_id, item.radio_id, item.content_title);
+                                }}
+                                style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: item.has_audio ? '#10b981' : '#475569', cursor: item.has_audio ? 'pointer' : 'not-allowed', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
+                              >
+                                {processingId === groupKey ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
+                                <span>Phát ngay (Tất cả kênh)</span>
+                              </button>
+                            )}
                             </div>
                         )}
                       </div>
@@ -1125,6 +1214,8 @@ export default function ScheduleManagement({ onLogout }: { onLogout?: () => void
           onUpdateSlot={onUpdateSlot}
           onDeleteSlot={onDeleteSlot}
           onPlayNow={handlePlayNow}
+          onStopBroadcast={onStopBroadcast || (() => {})}
+          activeBroadcast={activeBroadcast}
           isReadOnly={viewingDetailOnly}
           selectedDate={selectedDate}
         />

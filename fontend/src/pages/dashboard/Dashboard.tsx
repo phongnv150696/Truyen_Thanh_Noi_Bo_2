@@ -32,6 +32,9 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Play,
+  Pause,
+  Headphones,
 } from 'lucide-react'
 import './dashboardCSS.css'
 import MediaLibrary from '../media/MediaLibrary'
@@ -85,9 +88,10 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
   const [liveStream, setLiveStream] = useState<MediaStream | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [activeBroadcast, setActiveBroadcast] = useState<{ title: string, channel: string, user: string } | null>(null);
+  const [activeBroadcast, setActiveBroadcast] = useState<{ title: string, channel: string, user: string, channel_id?: number, schedule_id?: number, radio_id?: number, needsUnlock?: boolean, isPaused?: boolean, isHidden?: boolean } | null>(null);
   const [isAudioEnabled, setIsAudioEnabled] = useState(false);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'online' | 'offline'>('connecting');
+  const controlWsRef = useRef<WebSocket | null>(null);
   const isAudioEnabledRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(new Audio());
   const hlsRef = useRef<any>(null);
@@ -102,6 +106,27 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
   const [contentMgmtTab, setContentMgmtTab] = useState<'content' | 'ai'>('content');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const [todaySchedules, setTodaySchedules] = useState<any[]>([]);
+  const [showLocalMonitor, setShowLocalMonitor] = useState(false);
+
+  const normalizeBroadcastData = (data: any) => {
+    if (!data) return null;
+    const content = data.content || data;
+    return {
+      title: data.title || data.content_title || (data.radio_name ? `Radio: ${data.radio_name}` : null) || content.title || content.content_title || 'Bản tin không tên',
+      channel: data.channel || data.channel_name || content.channel || content.channel_name || 'Kênh hệ thống',
+      user: data.user || data.author_name || data.created_by_name || content.user || content.author_name || 'Hệ thống',
+      channel_id: data.channel_id || content.channel_id,
+      schedule_id: data.schedule_id || content.schedule_id,
+      radio_id: data.radio_id || content.radio_id,
+      isPaused: data.isPaused || false,
+      needsUnlock: false
+    };
+  };
+
+  const handleStartBroadcast = (data: any) => {
+    const normalized = normalizeBroadcastData(data);
+    if (normalized) setActiveBroadcast(normalized);
+  };
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
@@ -261,18 +286,10 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
     const handleBroadcastStart = (data: any) => {
       console.log('Dashboard: [DEBUG] broadcast-start received:', data);
 
-      // Fix: Title and other fields might be inside 'content' object depending on backend source
-      const content = data.content || data;
-      const fileUrl = content.file_url || data.file_url;
-
-      const broadcastData = {
-        title: content.title || 'Bản tin không tên',
-        channel: content.channel || 'Kênh mặc định',
-        user: content.user || 'Hệ thống',
-        needsUnlock: false
-      };
-
-      setActiveBroadcast(broadcastData as any);
+      const broadcastData = normalizeBroadcastData(data);
+      const fileUrl = data.file_url || (data.content && data.content.file_url) || (data.radio && data.radio.url);
+      
+      if (broadcastData) setActiveBroadcast(broadcastData);
 
       if (!fileUrl) {
         console.warn('Dashboard: [DEBUG] Missing file_url in data!');
@@ -304,6 +321,16 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
               }
               setIsAudioEnabled(false);
               isAudioEnabledRef.current = false;
+              // Show notification or visual cue that audio is blocked
+              setUnreadCount(prev => prev + 1);
+              setNotifications(prev => [{
+                id: Date.now(),
+                title: 'Âm thanh bị chặn',
+                message: 'Trình duyệt đã chặn tự động phát. Vui lòng nhấn "Nhấn để nghe" trên thanh trạng thái.',
+                type: 'warning',
+                is_read: false,
+                created_at: new Date().toISOString()
+              }, ...prev]);
             });
           });
         } else {
@@ -339,6 +366,18 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
       setActiveBroadcast(null);
     };
 
+    const handleBroadcastPause = () => {
+      if (audioRef.current) audioRef.current.pause();
+      setActiveBroadcast(prev => prev ? { ...prev, isPaused: true } : null);
+    };
+
+    const handleBroadcastResume = () => {
+      if (audioRef.current && isAudioEnabledRef.current) {
+        audioRef.current.play().catch(() => {});
+      }
+      setActiveBroadcast(prev => prev ? { ...prev, isPaused: false } : null);
+    };
+
     let statusWs: WebSocket | null = null;
     let shouldReconnect = true;
 
@@ -352,6 +391,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
       statusWs.onopen = () => {
         console.log('Dashboard: WebSocket status connected');
         setWsStatus('online');
+        controlWsRef.current = statusWs;
       };
 
       statusWs.onmessage = (event) => {
@@ -359,6 +399,10 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
           const data = JSON.parse(event.data);
           if (data.type === 'broadcast-start') {
             handleBroadcastStart(data);
+          } else if (data.type === 'broadcast-pause') {
+            handleBroadcastPause();
+          } else if (data.type === 'broadcast-resume') {
+            handleBroadcastResume();
           } else if (data.type === 'broadcast-stop' || data.type === 'emergency_status_change') {
             if (data.type === 'emergency_status_change') setIsEmergency(data.active);
             handleBroadcastStop();
@@ -517,6 +561,18 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
     setLiveStream(null);
     setIsLiveBroadcasting(false);
   };
+  
+  const stopBroadcast = () => {
+    if (controlWsRef.current && controlWsRef.current.readyState === WebSocket.OPEN) {
+      controlWsRef.current.send(JSON.stringify({ 
+        type: 'broadcast-stop',
+        channel_id: activeBroadcast?.channel_id || 0 // Default to global if not known
+      }));
+      setActiveBroadcast(null);
+    } else {
+      alert('Không thể kết nối tới máy chủ để dừng phát.');
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('openclaw_token')
@@ -617,6 +673,27 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
             }} />
             <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 600 }}>WS</span>
           </div>
+
+          {activeBroadcast && activeBroadcast.isHidden && (
+            <button 
+              onClick={() => setActiveBroadcast(prev => prev ? { ...prev, isHidden: false } : null)}
+              className="ani-pulse hover-scale"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                background: 'rgba(16, 185, 129, 0.15)',
+                border: '1px solid rgba(16, 185, 129, 0.5)',
+                padding: '6px 12px',
+                borderRadius: '10px',
+                color: '#10b981',
+                cursor: 'pointer',
+                fontWeight: 700,
+                fontSize: '0.8rem'
+              }}
+              title="Mở lại điều khiển phát thanh"
+            >
+              <Radio size={16} /> Đang phát...
+            </button>
+          )}
 
           <div style={{ position: 'relative' }} ref={notificationRef}>
             <div style={{ cursor: 'pointer' }} onClick={() => setIsNotificationOpen(!isNotificationOpen)}>
@@ -892,61 +969,125 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
               transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               style={{ width: '100%', height: '100%' }}
             >
-              {activeBroadcast && (
-                <div className="animate-slide-down" style={{ marginBottom: '2rem' }}>
+              {activeBroadcast && !activeBroadcast.isHidden && (
+                <div className="animate-slide-down" style={{ marginBottom: '1.5rem' }}>
                   <div className="action-card" style={{
-                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(99, 102, 241, 0.1))',
-                    border: '1px solid rgba(16, 185, 129, 0.2)',
+                    background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(99, 102, 241, 0.08))',
+                    border: '1px solid rgba(16, 185, 129, 0.15)',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '2rem',
-                    padding: '1rem 2rem',
-                    borderRadius: '16px'
+                    gap: '1.5rem',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '16px',
+                    boxShadow: '0 8px 32px -4px rgba(0,0,0,0.2)'
                   }}>
-                    <div className="mic-pulse active-recording" style={{ background: '#10b981', width: '40px', height: '40px' }}>
-                      <Radio size={20} color="white" className="ani-pulse" />
+                    <div className="mic-pulse active-recording" style={{ 
+                      background: '#10b981', 
+                      width: '38px', 
+                      height: '38px', 
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '12px'
+                    }}>
+                      <Radio size={18} color="white" className="ani-pulse" />
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ padding: '2px 8px', background: '#10b981', borderRadius: '4px', fontSize: '0.6rem', fontWeight: 800, color: 'white' }}>ĐANG PHÁT</span>
-                        <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>{activeBroadcast.title}</h3>
+                    
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                        <span style={{ padding: '1px 6px', background: '#10b981', borderRadius: '4px', fontSize: '0.55rem', fontWeight: 900, color: 'white', letterSpacing: '0.5px' }}>LIVE</span>
+                        <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeBroadcast.title}</h3>
                       </div>
-                      <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '2px' }}>
-                        Kênh: <strong>{activeBroadcast.channel}</strong> • Bởi: <strong>{activeBroadcast.user}</strong>
-                        {!isAudioEnabled && <span style={{ color: '#f59e0b', marginLeft: '10px', fontWeight: 700 }}>⚠️ Loa trình duyệt đang tắt</span>}
-                      </p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#64748b', fontSize: '0.8rem' }}>
+                        <span>Kênh: <strong style={{ color: '#94a3b8' }}>{activeBroadcast.channel}</strong></span>
+                        <span style={{ opacity: 0.3 }}>|</span>
+                        <span>Bởi: <strong style={{ color: '#94a3b8' }}>{activeBroadcast.user}</strong></span>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      {!isAudioEnabled && (
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+
+                      {activeBroadcast.isPaused ? (
                         <button
                           onClick={() => {
-                            console.log('Dashboard: [DEBUG] User clicked "Nhấn để nghe"');
-                            if (audioRef.current) {
-                              console.log('Dashboard: [DEBUG] Current audio src:', audioRef.current.src);
-                              audioRef.current.play().then(() => {
-                                console.log('Dashboard: [DEBUG] ✅ Manual play success!');
-                                setIsAudioEnabled(true);
-                                isAudioEnabledRef.current = true;
-                              }).catch(e => {
-                                if (e.name !== 'AbortError' && e.name !== 'NotAllowedError') {
-                                  console.error('Dashboard: [DEBUG] ❌ Manual play failed:', e);
-                                  alert('Không thể phát âm thanh: ' + e.message);
-                                }
-                              });
-                            } else {
-                              console.error('Dashboard: [DEBUG] ❌ audioRef is null!');
+                            if (controlWsRef.current?.readyState === WebSocket.OPEN) {
+                              controlWsRef.current.send(JSON.stringify({ 
+                                type: 'broadcast-resume', 
+                                channel_id: activeBroadcast.channel_id || 0 
+                              }));
                             }
                           }}
-                          className="btn-primary"
-                          style={{ padding: '6px 16px', fontSize: '0.8rem', background: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}
+                          className="hover-scale"
+                          style={{ 
+                            padding: '6px 20px', 
+                            fontSize: '0.85rem', 
+                            background: 'linear-gradient(135deg, #10b981, #059669)', 
+                            border: 'none',
+                            borderRadius: '10px',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.2)',
+                            color: 'white',
+                            fontWeight: 700,
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            height: '38px',
+                            cursor: 'pointer'
+                          }}
                         >
-                          ▶ Nhấn để nghe
+                          <Play size={16} fill="white" /> TIẾP TỤC
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            if (controlWsRef.current?.readyState === WebSocket.OPEN) {
+                              controlWsRef.current.send(JSON.stringify({ 
+                                type: 'broadcast-pause', 
+                                channel_id: activeBroadcast.channel_id || 0 
+                              }));
+                            }
+                          }}
+                          className="hover-scale"
+                          style={{ 
+                            padding: '6px 20px', 
+                            fontSize: '0.85rem', 
+                            background: 'linear-gradient(135deg, #f59e0b, #d97706)', 
+                            border: 'none',
+                            borderRadius: '10px',
+                            boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)',
+                            color: 'white',
+                            fontWeight: 700,
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '8px', 
+                            height: '38px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <Pause size={16} fill="white" /> TẠM DỪNG
                         </button>
                       )}
+                      
                       <button
-                        onClick={() => setActiveBroadcast(null)}
-                        className="btn-secondary"
-                        style={{ padding: '6px 16px', fontSize: '0.8rem' }}
+                        onClick={stopBroadcast}
+                        className="btn-danger"
+                        style={{ padding: '6px 16px', fontSize: '0.8rem', background: '#ef4444', height: '36px' }}
+                      >
+                        Dừng phát
+                      </button>
+                      <button
+                        onClick={() => setActiveBroadcast(prev => prev ? { ...prev, isHidden: true } : null)}
+                        style={{ 
+                          background: 'rgba(255,255,255,0.05)', 
+                          border: '1px solid rgba(255,255,255,0.1)', 
+                          color: '#94a3b8', 
+                          padding: '6px 16px', 
+                          fontSize: '0.8rem', 
+                          borderRadius: '8px', 
+                          cursor: 'pointer',
+                          height: '36px'
+                        }}
                       >
                         Ẩn
                       </button>
@@ -1176,7 +1317,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                           </section>
                         </div>
                       );
-                    case 'schedule': return <ScheduleManagement onLogout={onLogout} />;
+                    case 'schedule': return <ScheduleManagement onLogout={onLogout} activeBroadcast={activeBroadcast} onStopBroadcast={stopBroadcast} onStartBroadcast={handleStartBroadcast} />;
                     case 'content': return <ContentManagement user={user} onLogout={onLogout} />;
                     case 'media': return <MediaLibrary onLogout={onLogout} />;
                     case 'system-ops':
@@ -1186,7 +1327,7 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
                             <button onClick={() => setSystemOpsTab('schedule')} className={systemOpsTab === 'schedule' ? 'btn-primary' : 'btn-secondary'} style={{ padding: '8px 24px', borderRadius: '10px', fontSize: '0.9rem', minWidth: '140px' }}>Lịch phát thanh</button>
                             <button onClick={() => setSystemOpsTab('devices')} className={systemOpsTab === 'devices' ? 'btn-primary' : 'btn-secondary'} style={{ padding: '8px 24px', borderRadius: '10px', fontSize: '0.9rem', minWidth: '140px' }}>Quản lý Thiết bị</button>
                           </div>
-                          {systemOpsTab === 'schedule' ? <ScheduleManagement onLogout={onLogout} /> : <DeviceManagement onLogout={onLogout} />}
+                          {systemOpsTab === 'schedule' ? <ScheduleManagement onLogout={onLogout} activeBroadcast={activeBroadcast} onStopBroadcast={stopBroadcast} onStartBroadcast={handleStartBroadcast} /> : <DeviceManagement onLogout={onLogout} />}
                         </div>
                       );
                     case 'radio-ops':
@@ -1240,6 +1381,19 @@ export default function Dashboard({ user, onLogout }: { user: any, onLogout: () 
 
         {/* Thẻ audio ẩn để đảm bảo tính thương thích cao nhất */}
         <audio ref={audioRef} style={{ display: 'none' }} />
+        
+        <style>{`
+          .hover-scale {
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          .hover-scale:hover {
+            transform: scale(1.05);
+            filter: brightness(1.1);
+          }
+          .hover-scale:active {
+            transform: scale(0.95);
+          }
+        `}</style>
       </div>
     </div>
   )

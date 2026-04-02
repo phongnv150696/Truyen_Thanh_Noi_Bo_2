@@ -69,12 +69,17 @@ const BroadcastTerminal = () => {
       };
 
       ws.onmessage = (event) => {
-        setLastRawMessage(event.data);
-        try {
-          const data = JSON.parse(event.data);
-          handleSocketMessage(data);
-        } catch (e) {
-          console.error('Failed to parse socket message', e);
+        if (typeof event.data === 'string') {
+          setLastRawMessage(event.data);
+          try {
+            const data = JSON.parse(event.data);
+            handleSocketMessage(data);
+          } catch (e) {
+            console.error('Failed to parse socket message', e);
+          }
+        } else {
+          // It's binary audio data (PCM), we just show a placeholder
+          setLastRawMessage('Binary Audio Stream data...');
         }
       };
 

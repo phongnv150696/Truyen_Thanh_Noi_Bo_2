@@ -1,27 +1,37 @@
-import pg from 'pg';
-const { Client } = pg;
+import pkg from 'pg';
+const { Client } = pkg;
+import 'dotenv/config';
 
-const client = new Client({ connectionString: 'postgresql://postgres:YourStrongPassword@localhost:5432/openclaw' });
-
-client.connect().then(async () => {
-  const r1 = await client.query('SELECT COUNT(*) as cnt FROM broadcast_schedules');
-  console.log('Total broadcast_schedules:', r1.rows[0].cnt);
-
-  const r2 = await client.query("SELECT id, title, status FROM content_items ORDER BY id DESC LIMIT 5");
-  console.log('Sample content_items:', JSON.stringify(r2.rows));
-
-  const r3 = await client.query("SELECT COUNT(*) as cnt FROM content_items WHERE status IN ('approved','published')");
-  console.log('Approved/published content count:', r3.rows[0].cnt);
-
-  const r4 = await client.query(`
-    SELECT bs.id, bs.scheduled_time, ci.title, ci.status 
-    FROM broadcast_schedules bs 
-    JOIN content_items ci ON bs.content_id = ci.id LIMIT 3
-  `);
-  console.log('Joined schedules:', JSON.stringify(r4.rows));
-
-  await client.end();
-}).catch(async (e) => {
-  console.error('DB Error:', e.message);
-  await client.end();
+const client = new Client({
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5432/openclaw'
 });
+
+async function check() {
+  try {
+    await client.connect();
+    
+    // Check channel 1
+    const channelRes = await client.query("SELECT id, name, status FROM channels WHERE id = 1");
+    
+    // Check device 22
+    const deviceRes = await client.query("SELECT id, name, status, ip_address, last_seen FROM devices WHERE id = 22");
+    
+    // Check all online devices
+    const onlineDevices = await client.query("SELECT id, name, status, ip_address FROM devices WHERE status = 'online'");
+
+    const results = {
+      channel_1: channelRes.rows[0],
+      device_22: deviceRes.rows[0],
+      online_devices: onlineDevices.rows
+    };
+
+    console.log(JSON.stringify(results, null, 2));
+
+  } catch (err) {
+    console.error('JSON_ERROR:', err.message);
+  } finally {
+    await client.end();
+  }
+}
+
+check();

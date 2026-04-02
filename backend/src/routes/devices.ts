@@ -3,7 +3,7 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 export default async function deviceRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
   // Get all devices with unit info
-  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const user = request.user;
     const client = await fastify.pg.connect();
     try {
@@ -31,7 +31,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   });
 
   // Add a new device
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { name, type, ip_address, unit_id, channel_id } = request.body;
     const user = request.user;
 
@@ -53,7 +53,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   });
 
   // Update a device
-  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const { name, type, ip_address, status, unit_id, channel_id } = request.body;
     const user = request.user;
@@ -93,7 +93,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   });
 
   // Delete a device
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const user = request.user;
     const client = await fastify.pg.connect();
@@ -114,7 +114,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
   });
 
   // Mock Ping / Health Check
-  fastify.post('/:id/ping', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.post('/:id/ping', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const user = request.user;
     const client = await fastify.pg.connect();
@@ -177,15 +177,14 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
       
       let device;
       if (existing.rows.length > 0) {
-        // Update status and last_seen
+        // Update ip and last_seen only — keep status as-is (managed by WebSocket)
         const { rows } = await client.query(
-          'UPDATE devices SET status = $1, last_seen = NOW(), ip_address = $2 WHERE id = $3 RETURNING *',
-          ['online', ip_address, existing.rows[0].id]
+          'UPDATE devices SET last_seen = NOW(), ip_address = $1 WHERE id = $2 RETURNING *',
+          [ip_address, existing.rows[0].id]
         );
         device = rows[0];
       } else {
-        // Create new device (Default to first unit/channel if none specified, or let user assign later)
-        // For simplicity, we find the first unit.
+        // Create new device with status 'offline' — WebSocket connection will set it online
         const unitRes = await client.query('SELECT id FROM units LIMIT 1');
         const channelRes = await client.query('SELECT id FROM channels LIMIT 1');
         const unitId = unitRes.rows[0]?.id || 1;
@@ -193,7 +192,7 @@ export default async function deviceRoutes(fastify: FastifyInstance, options: Fa
 
         const { rows } = await client.query(
           'INSERT INTO devices (name, type, ip_address, unit_id, channel_id, status, last_seen) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
-          [name || `Loa XiaoZhi [${device_id}]`, type || 'xiaozhi-speaker', ip_address, unitId, channelId, 'online']
+          [name || `Loa XiaoZhi [${device_id}]`, type || 'xiaozhi-speaker', ip_address, unitId, channelId, 'offline']
         );
         device = rows[0];
       }

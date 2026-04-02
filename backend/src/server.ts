@@ -24,12 +24,23 @@ import profileRoutes from './routes/profile.js';
 import analyticsRoutes from './routes/analytics.js';
 import reportRoutes from './routes/reports.js';
 import radioRoutes from './routes/radios.js';
+import fastifyRateLimit from '@fastify/rate-limit';
 
 import { startScheduler } from './scheduler.js';
 import 'dotenv/config';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// ── Startup Guard: Fail fast if critical secrets are missing ──
+const REQUIRED_ENV = ['DATABASE_URL', 'JWT_SECRET', 'FRONTEND_URL'];
+for (const key of REQUIRED_ENV) {
+  if (!process.env[key]) {
+    console.error(`\n❌ STARTUP ERROR: Environment variable "${key}" is not set.`);
+    console.error('   Please check your .env file and ensure all required variables are configured.');
+    process.exit(1);
+  }
+}
 
 const server: FastifyInstance = fastify({
   logger: true,
@@ -40,9 +51,22 @@ const server: FastifyInstance = fastify({
 async function setupServer() {
     // CORS
     await server.register(cors, {
-      origin: '*',
+      origin: process.env.FRONTEND_URL,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
       allowedHeaders: ['Content-Type', 'Authorization']
+    });
+
+    // Rate Limiting (Global: 100 req/min)
+    await server.register(fastifyRateLimit, {
+      max: 100,
+      timeWindow: '1 minute',
+      errorResponseBuilder: (request, context) => {
+        return {
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: `Hệ thống bận. Vui lòng thử lại sau ${context.after}.`
+        };
+      }
     });
 
     // WebSocket support (Register early)
@@ -51,12 +75,12 @@ async function setupServer() {
 
     // Database
     await server.register(postgres, {
-      connectionString: process.env.DATABASE_URL || 'postgresql://postgres:YourStrongPassword@localhost:5432/openclaw'
+      connectionString: process.env.DATABASE_URL // validated at startup — never undefined here
     });
 
     // JWT
     await server.register(fastifyJwt, {
-      secret: process.env.JWT_SECRET || 'openclaw_v2_secret_key_2024'
+      secret: process.env.JWT_SECRET! // validated at startup — never undefined here
     });
 
     // Static Files (for uploads)

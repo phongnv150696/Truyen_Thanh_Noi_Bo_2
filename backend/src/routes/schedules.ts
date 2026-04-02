@@ -4,7 +4,7 @@ import { getFullURL } from '../utils/url.js';
 export default async function scheduleRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
   // 1. Get all schedules (flat list) - with fallback for missing columns
-  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader', 'editor'])] }, async (request, reply) => {
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander', 'commander', 'editor'])] }, async (request, reply) => {
     const user = request.user as any;
     try {
       // Try full query first (with triggered_at and created_by)
@@ -65,7 +65,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
 
   // 1b. Get schedules GROUPED by content item (for new UI)
   // Returns each content item once, with all its schedules (channels + timeslots) nested inside
-  fastify.get('/grouped', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
+  fastify.get('/grouped', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster'])] }, async (request, reply) => {
     const user = request.user as any;
     let query = `
       SELECT 
@@ -128,7 +128,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 2. Create new schedule (also used by popup "+ Thêm giờ phát")
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { channel_id, content_id, radio_id, scheduled_time, duration, repeat_pattern } = request.body as any;
     const user = request.user;
     
@@ -172,7 +172,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 3. Update schedule
-  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const { channel_id, content_id, radio_id, scheduled_time, duration, repeat_pattern, is_active } = request.body as any;
     const user = request.user;
@@ -196,16 +196,27 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
         UPDATE broadcast_schedules 
         SET 
           channel_id = COALESCE($1, channel_id),
-          content_id = $2,
-          radio_id = $3,
+          content_id = CASE WHEN $2::integer IS NOT NULL THEN $2 ELSE content_id END,
+          radio_id = CASE WHEN $3::integer IS NOT NULL THEN $3 ELSE radio_id END,
           scheduled_time = COALESCE($4, scheduled_time),
           duration = COALESCE($5, duration),
           repeat_pattern = COALESCE($6, repeat_pattern),
-          is_active = COALESCE($7, is_active)
+          is_active = COALESCE($7, is_active),
+          triggered_at = NULL,
+          stopped_at = NULL
         WHERE id = $8
         RETURNING *
       `;
-      const result = await client.query(query, [channel_id, content_id === undefined ? undefined : content_id, radio_id === undefined ? undefined : radio_id, scheduled_time, duration, repeat_pattern, is_active, id]);
+      const result = await client.query(query, [
+        channel_id || null, 
+        (content_id === undefined || content_id === null) ? null : content_id, 
+        (radio_id === undefined || radio_id === null) ? null : radio_id, 
+        scheduled_time || null, 
+        duration || null, 
+        repeat_pattern || null, 
+        is_active === undefined ? null : is_active, 
+        id
+      ]);
       return result.rows[0];
     } finally {
       client.release();
@@ -213,7 +224,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 4. Play Now (Force schedule to current time)
-  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
+  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const user = request.user;
     
@@ -297,7 +308,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 4b. Play All Channels for a Content (Outside Action)
-  fastify.post('/content/:contentId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
+  fastify.post('/content/:contentId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander', 'commander'])] }, async (request: any, reply) => {
     const { contentId } = request.params;
     
     // 1. Find all channels that have this content scheduled (Unique channels)
@@ -368,7 +379,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 4c. Play All Channels for a Radio (Outside Action)
-  fastify.post('/radio/:radioId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander', 'leader'])] }, async (request: any, reply) => {
+  fastify.post('/radio/:radioId/play-all', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander', 'commander'])] }, async (request: any, reply) => {
     const { radioId } = request.params;
     
     // 1. Find all channels that have this radio scheduled
@@ -431,7 +442,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 5. Delete schedule
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const user = request.user;
     const client = await fastify.pg.connect();
@@ -490,7 +501,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 6.2 Trigger Emergency
-  fastify.post('/emergency', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander', 'technician'])] }, async (request: any, reply) => {
+  fastify.post('/emergency', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander', 'broadcaster'])] }, async (request: any, reply) => {
     try {
       // Upsert emergency_mode = true
       await fastify.pg.query(`
@@ -525,7 +536,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
   });
 
   // 6.3 Stop Emergency
-  fastify.post('/emergency/stop', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander', 'technician'])] }, async (request: any, reply) => {
+  fastify.post('/emergency/stop', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander', 'broadcaster'])] }, async (request: any, reply) => {
     try {
       await fastify.pg.query("UPDATE system_config SET value = 'false', updated_at = CURRENT_TIMESTAMP WHERE key = 'emergency_mode'");
       

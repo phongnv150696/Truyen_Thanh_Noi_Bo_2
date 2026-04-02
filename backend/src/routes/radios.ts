@@ -15,7 +15,7 @@ export default async function radioRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // Add a new radio
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster'])] }, async (request: any, reply) => {
     const { name, url, description } = request.body;
     const client = await fastify.pg.connect();
     try {
@@ -42,7 +42,7 @@ export default async function radioRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // Play a radio station
-  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request: any, reply) => {
+  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const { channel_id } = request.body; // Optional: specify channel
     

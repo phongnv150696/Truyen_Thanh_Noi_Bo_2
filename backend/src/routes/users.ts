@@ -152,11 +152,14 @@ export default async function userRoutes(fastify: FastifyInstance, options: Fast
         reg.unit_id
       ]);
 
-      // Update registration status
-      await fastify.pg.query("UPDATE user_registrations SET status = 'approved' WHERE id = $1", [id]);
+      // Update registration status with audit info
+      await fastify.pg.query(
+        "UPDATE user_registrations SET status = 'approved', approved_by = $2, approved_at = CURRENT_TIMESTAMP WHERE id = $1", 
+        [id, (request.user as any).id]
+      );
 
       return { message: 'User approved and created', userId: newUser.rows[0].id };
-    } catch (error) {
+    } catch (error: any) {
       fastify.log.error(error);
       return reply.code(500).send({ error: 'Internal server error' });
     }
@@ -165,7 +168,12 @@ export default async function userRoutes(fastify: FastifyInstance, options: Fast
   // 8. Reject registration
   fastify.post('/registrations/:id/reject', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander'])] }, async (request: any, reply) => {
     const { id } = request.params;
-    const result = await fastify.pg.query("UPDATE user_registrations SET status = 'rejected' WHERE id = $1", [id]);
+    const { reason } = request.body as any;
+    
+    const result = await fastify.pg.query(
+      "UPDATE user_registrations SET status = 'rejected', approved_by = $2, approved_at = CURRENT_TIMESTAMP, rejected_reason = $3 WHERE id = $1", 
+      [id, request.user.id, reason || 'Bị từ chối bởi quản trị viên.']
+    );
     
     if (result.rowCount === 0) return reply.code(404).send({ error: 'Registration not found' });
     return { message: 'Registration rejected' };

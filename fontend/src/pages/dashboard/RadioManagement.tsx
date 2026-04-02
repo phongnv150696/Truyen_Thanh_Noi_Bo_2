@@ -28,7 +28,9 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
   const [newSchedule, setNewSchedule] = useState({
     channel_id: '',
     scheduled_time: '',
-    repeat_pattern: 'none'
+    repeat_pattern: 'none',
+    end_time: '',
+    duration: 0 as number | undefined
   });
 
   useEffect(() => {
@@ -227,17 +229,34 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => {
-                        setSchedulingRadio(radio);
-                        setShowScheduleModal(true);
-                      }}
-                      className="btn-secondary" 
-                      style={{ padding: '10px', borderRadius: '12px' }}
-                      title="Đặt lịch phát sóng"
-                    >
-                      <Clock size={18} />
-                    </button>
+                        <button 
+                          onClick={() => {
+                            setSchedulingRadio(radio);
+                            
+                            // Initialize newSchedule defaults
+                            let defaultChannel = '';
+                            if (channels.length > 0) defaultChannel = channels[0].id.toString();
+                            
+                            const now = new Date();
+                            // Create local datetime-local format string (YYYY-MM-DDTHH:mm)
+                            const localISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+                            setNewSchedule({
+                              channel_id: defaultChannel,
+                              scheduled_time: localISO,
+                              repeat_pattern: 'none',
+                              end_time: '',
+                              duration: undefined
+                            });
+                            
+                            setShowScheduleModal(true);
+                          }}
+                          className="btn-secondary" 
+                          style={{ padding: '10px', borderRadius: '12px' }}
+                          title="Lập lịch phát Radio này"
+                        >
+                          <Clock size={18} />
+                        </button>
 
                     {playingId === radio.id ? (
                       <button onClick={handleStop} className="btn-primary" style={{ background: '#ef4444', padding: '10px 20px', borderRadius: '12px' }}>
@@ -387,8 +406,39 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
                       <input 
                         type="datetime-local"
                         className="premium-input"
-                        value={newSchedule.scheduled_time}
-                        onChange={e => setNewSchedule({...newSchedule, scheduled_time: e.target.value})}
+                        value={newSchedule.scheduled_time.includes('Z') ? 
+                          (() => {
+                            const d = new Date(newSchedule.scheduled_time);
+                            return !isNaN(d.getTime()) ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : newSchedule.scheduled_time.slice(0, 16);
+                          })()
+                        : newSchedule.scheduled_time.slice(0, 16)}
+                        onChange={e => {
+                          const val = e.target.value;
+                          if (!val) {
+                            setNewSchedule({...newSchedule, scheduled_time: ''});
+                            return;
+                          }
+                          try {
+                            const localDateObj = new Date(val);
+                            setNewSchedule({...newSchedule, scheduled_time: localDateObj.toISOString()});
+                          } catch (err) {
+                            setNewSchedule({...newSchedule, scheduled_time: val});
+                          }
+                        }}
+                        style={{ paddingRight: '12px' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Giờ kết thúc */}
+                  <div style={{ flex: 1 }}>
+                    <label className="premium-label" style={{ fontSize: '0.7rem', marginBottom: '8px' }}>GIỜ KẾT THÚC (TÙY CHỌN)</label>
+                    <div className="relative">
+                      <input 
+                        type="time"
+                        className="premium-input"
+                        value={newSchedule.end_time}
+                        onChange={e => setNewSchedule({...newSchedule, end_time: e.target.value})}
                         style={{ paddingRight: '12px' }}
                       />
                     </div>
@@ -400,8 +450,29 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
                     style={{ height: '52px', padding: '0 32px', borderRadius: '16px', fontWeight: 900 }}
                     onClick={async () => {
                       try {
+                        const payload = { ...newSchedule };
+                        
+                        // Calculate duration if end_time is provided
+                        if (payload.end_time && payload.scheduled_time) {
+                          try {
+                            const datePart = payload.scheduled_time.split('T')[0];
+                            const start = new Date(payload.scheduled_time).getTime();
+                            const [h, m] = payload.end_time.split(':').map(Number);
+                            const end = new Date(datePart).setHours(h, m, 0, 0);
+                            
+                            if (end > start) {
+                              payload.duration = Math.floor((end - start) / 1000);
+                            } else {
+                                alert("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
+                                return;
+                            }
+                          } catch (err) {
+                            console.error("Duration calculation error", err);
+                          }
+                        }
+                        
                         const res = await axios.post(`http://${window.location.hostname}:3000/schedules`, {
-                          ...newSchedule,
+                          ...payload,
                           radio_id: schedulingRadio.id,
                           content_id: null
                         }, {
@@ -410,6 +481,13 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
                         if (res.status === 201) {
                           alert('Đã đặt lịch phát Radio thành công!');
                           setShowScheduleModal(false);
+                          setNewSchedule({ 
+                            channel_id: '', 
+                            scheduled_time: '', 
+                            repeat_pattern: 'none', 
+                            end_time: '', 
+                            duration: undefined 
+                          });
                         }
                       } catch (err: any) {
                         alert('Lỗi khi lưu lịch: ' + (err.response?.data?.error || 'Máy chủ không phản hồi'));

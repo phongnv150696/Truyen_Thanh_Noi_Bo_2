@@ -17,7 +17,8 @@ import {
   Building2,
   Radio as RadioIcon,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Cpu
 } from 'lucide-react';
 
 interface Device {
@@ -746,10 +747,15 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                               justifyContent: 'center',
                               border: '1px solid rgba(255,255,255,0.05)'
                             }}>
-                              {device.type === 'terminal' ? <Smartphone size={18} color="#6366f1" /> : <Speaker size={18} color="#94a3b8" />}
+                              {device.type === 'terminal' ? <Smartphone size={18} color="#6366f1" /> : 
+                               device.type === 'esp32-speaker' ? <Cpu size={18} color="#10b981" /> : 
+                               <Speaker size={18} color="#94a3b8" />}
                             </div>
                             <div>
-                              <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9', fontSize: '0.9rem' }}>{device.name}</p>
+                              <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9', fontSize: '0.9rem' }}>
+                                {device.name}
+                                {device.type === 'esp32-speaker' && <span style={{ marginLeft: '8px', fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '1px 6px', borderRadius: '4px' }}>ESP32</span>}
+                              </p>
                               {groupBy !== 'unit' && <p style={{ margin: '2px 0 0 0', fontSize: '0.7rem', color: '#64748b' }}>{device.unit_name || 'Đơn vị mặc định'}</p>}
                             </div>
                           </div>
@@ -949,6 +955,7 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                           style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
                         >
                           <option value="speaker">Loa (Đầu cuối)</option>
+                          <option value="esp32-speaker">Cụm loa ESP32 (OpenClaw)</option>
                           <option value="terminal">Trung tâm (Terminal)</option>
                         </select>
                       </div>

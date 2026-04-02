@@ -1,11 +1,13 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import { getFullURL } from '../utils/url.js';
 import mammoth from 'mammoth';
+import { AIAgentService } from '../services/ai-agent.js';
 
 export default async function contentRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
+  const aiService = new AIAgentService(fastify);
   
   // 0. Import Word Content
-  fastify.post('/import-word', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request, reply) => {
+  fastify.post('/import-word', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
     const data = await request.file();
     if (!data) {
       return reply.code(400).send({ error: 'Không tìm thấy tệp tải lên' });
@@ -30,7 +32,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
   
   // 1. Get all content items
-  fastify.get('/', async (request: any, reply) => {
+  fastify.get('/', async (request: any, reply: any) => {
     const { status } = request.query;
     const client = await fastify.pg.connect();
     try {
@@ -56,7 +58,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
     }
   });
 
-  fastify.get('/pending', async (request, reply) => {
+  fastify.get('/pending', async (request: any, reply: any) => {
     const client = await fastify.pg.connect();
     try {
       const query = `
@@ -80,7 +82,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
 
   // 2. Get single content item
-  fastify.get('/:id', async (request: any, reply) => {
+  fastify.get('/:id', async (request: any, reply: any) => {
     const { id } = request.params; console.log("[PLAY] Request to play content ID: " + id);
     const client = await fastify.pg.connect();
     try {
@@ -95,7 +97,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
 
   // 3. Create content item
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
     const { title, body, summary, tags, status, author_id } = request.body;
     const client = await fastify.pg.connect();
     try {
@@ -103,9 +105,12 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
       const isEmergency = tagsArray.includes('Khẩn');
       const finalStatus = isEmergency ? 'approved' : (status || 'pending_review');
 
+      // ── Mới: Tự động kiểm thử nội dung qua AI ──
+      const validationResults = await aiService.analyzeContentPolicy(body);
+
       const { rows } = await client.query(
-        'INSERT INTO content_items (title, body, summary, tags, status, author_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-        [title, body, summary, tagsArray, finalStatus, author_id]
+        'INSERT INTO content_items (title, body, summary, tags, status, author_id, validation_results) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
+        [title, body, summary, tagsArray, finalStatus, author_id, JSON.stringify(validationResults)]
       );
       const content = rows[0];
 
@@ -152,11 +157,14 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
 
   // 4. Update content item
-  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply) => {
+  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
     const { id } = request.params;
     const { title, body, summary, tags, status, comments } = request.body;
     const client = await fastify.pg.connect();
     try {
+      // ── Mới: Tự động kiểm thử lại khi cập nhật ──
+      const validationResults = body ? await aiService.analyzeContentPolicy(body) : null;
+
       const { rows } = await client.query(
         `UPDATE content_items SET 
           title = COALESCE($1, title), 
@@ -164,9 +172,10 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
           summary = COALESCE($3, summary), 
           tags = COALESCE($4, tags), 
           status = COALESCE($5, status), 
+          validation_results = COALESCE($6, validation_results),
           updated_at = CURRENT_TIMESTAMP 
-        WHERE id = $6 RETURNING *`,
-        [title, body, summary, tags, status, id]
+        WHERE id = $7 RETURNING *`,
+        [title, body, summary, tags, status, validationResults ? JSON.stringify(validationResults) : null, id]
       );
       if (rows.length === 0) {
         return reply.status(404).send({ message: 'Content not found' });
@@ -193,7 +202,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
 
   // 5. Delete content item
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
     const { id } = request.params;
     const client = await fastify.pg.connect();
     try {
@@ -208,7 +217,7 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
   });
 
   // 6. Play content item immediately
-  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander', 'leader', 'technician'])] }, async (request: any, reply) => {
+  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander', 'commander', 'broadcaster'])] }, async (request: any, reply: any) => {
     const { id } = request.params;
     const client = await fastify.pg.connect();
     try {

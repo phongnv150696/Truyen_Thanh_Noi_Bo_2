@@ -1,8 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
-import fs from 'fs';
-import path from 'path';
 
 const loginSchema = z.object({
   username: z.string(),
@@ -11,7 +9,8 @@ const loginSchema = z.object({
 
 const registerSchema = z.object({
   username: z.string().min(3),
-  password: z.string().min(6),
+  password: z.string().min(8).regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, 
+    "Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt."),
   full_name: z.string().optional(),
   email: z.string().email().optional(),
   rank: z.string().optional(),
@@ -19,24 +18,27 @@ const registerSchema = z.object({
   unit_id: z.number().optional(),
 });
 
-const logFile = path.join(process.cwd(), 'auth_debug.txt');
-const log = (msg: string) => {
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
-  console.log(`[AUTH DEBUG] ${msg}`);
-};
 
 export default async function authRoutes(server: FastifyInstance, options: FastifyPluginOptions) {
-  server.post('/login', async (request, reply) => {
-    log('--- Login Request Received ---');
+  server.post('/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+        errorResponseBuilder: () => ({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Bạn đã đăng nhập quá nhiều lần. Vui lòng đợi 1 phút rồi thử lại.'
+        })
+      }
+    }
+  }, async (request, reply) => {
     const result = loginSchema.safeParse(request.body);
     if (!result.success) {
-      log('Invalid input format');
       return reply.code(400).send({ error: 'Invalid input', details: result.error.format() });
     }
 
     const { username, password } = result.data;
-    log(`Attempting login for: "${username}"`);
 
     try {
       const { rows } = await server.pg.query(
@@ -45,24 +47,15 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
       );
 
       if (rows.length === 0) {
-        log(`User NOT FOUND in database: "${username}"`);
         return reply.code(401).send({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
       }
 
       const user = rows[0];
-      log(`User found: ${user.username} (ID: ${user.id})`);
-      log(`DB Password Hash: ${user.password_hash}`);
-      log(`Password provided length: ${password.length}`);
-
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
-      log(`Bcrypt comparison result: ${isPasswordValid}`);
 
       if (!isPasswordValid) {
-        log('Authentication FAILED: Password mismatch');
         return reply.code(401).send({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
       }
-
-      log('Authentication SUCCESS');
 
       const token = server.jwt.sign({
         id: user.id,
@@ -86,16 +79,25 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         }
       };
     } catch (error: any) {
-      log(`Error during login: ${error.message}`);
       return reply.code(500).send({ error: 'Lỗi hệ thống' });
     }
   });
 
-  server.post('/register', async (request, reply) => {
-    log('--- Register Request Received ---');
+  server.post('/register', {
+    config: {
+      rateLimit: {
+        max: 3, // Register even stricter
+        timeWindow: '1 minute',
+        errorResponseBuilder: () => ({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Bạn đang đăng ký quá nhanh. Vui lòng đợi 1 phút.'
+        })
+      }
+    }
+  }, async (request, reply) => {
     const result = registerSchema.safeParse(request.body);
     if (!result.success) {
-      log('Invalid registration input');
       return reply.code(400).send({ error: 'Dữ liệu không hợp lệ', details: result.error.format() });
     }
 
@@ -135,14 +137,30 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         ]
       );
 
-      log(`User registration pending approval: ${username}`);
-
       return reply.code(201).send({
         message: 'Đăng ký thành công. Vui lòng chờ quản trị viên phê duyệt tài khoản của bạn.'
       });
     } catch (error: any) {
-      log(`Error during registration: ${error.message}`);
       return reply.code(500).send({ error: 'Lỗi hệ thống khi đăng ký' });
+    }
+  });
+
+  // 9. Check registration status (Public)
+  server.get('/registration-status/:username', async (request: any, reply) => {
+    const { username } = request.params;
+    try {
+      const { rows } = await server.pg.query(
+        "SELECT status, created_at, approved_at, rejected_reason FROM user_registrations WHERE username = $1 ORDER BY created_at DESC LIMIT 1",
+        [username]
+      );
+
+      if (rows.length === 0) {
+        return reply.code(404).send({ error: 'Không tìm thấy hồ sơ đăng ký cho người dùng này.' });
+      }
+
+      return rows[0];
+    } catch (err: any) {
+      return reply.code(500).send({ error: 'Lỗi khi kiểm tra trạng thái' });
     }
   });
 

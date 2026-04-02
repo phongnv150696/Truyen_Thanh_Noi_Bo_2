@@ -12,7 +12,7 @@ export default async function aiRoutes(fastify: FastifyInstance, options: Fastif
     return { summary };
   });
 
-  // 2. Analyze policy
+  // 2. Validate content fully (Replaces old analyze-policy with new logic)
   fastify.post('/analyze-policy', { preHandler: [fastify.authenticate] }, async (request: any, reply) => {
     const { text } = request.body;
     if (!text) return reply.code(400).send({ error: 'No text provided' });
@@ -20,10 +20,11 @@ export default async function aiRoutes(fastify: FastifyInstance, options: Fastif
     return result;
   });
 
-  // 3. Generate script (moved from existing logic if needed, or kept redundant)
+  // 3. Generate broadcast script from raw text
   fastify.post('/generate-script', { preHandler: [fastify.authenticate] }, async (request: any, reply) => {
     const { rawText } = request.body;
-    const script = await aiService.generateScript(rawText);
-    return script;
+    if (!rawText) return reply.code(400).send({ error: 'No raw text provided' });
+    const result = await aiService.generateScript(rawText);
+    return result;
   });
 }

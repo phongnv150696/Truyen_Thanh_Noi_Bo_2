@@ -3,6 +3,7 @@ import '@fastify/multipart';
 import { pipeline } from 'stream/promises';
 import fs from 'fs';
 import path from 'path';
+import { getLocalIp } from '../utils/ip.js';
 import { v4 as uuidv4 } from 'uuid';
 import * as musicMetadata from 'music-metadata';
 import ffmpeg from 'fluent-ffmpeg';
@@ -11,7 +12,7 @@ import { generateTTS } from '../utils/tts.js';
 export default async function mediaRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
 
   // 1. Upload Media
-  fastify.post('/upload', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'editor'])] }, async (request, reply) => {
+  fastify.post('/upload', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'editor'])] }, async (request, reply) => {
     const data = await request.file();
     if (!data) {
       return reply.code(400).send({ error: 'No file uploaded' });
@@ -99,7 +100,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 2. List Media
-  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'editor'])] }, async (request, reply) => {
+  fastify.get('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'commander', 'editor', 'broadcaster', 'listener'])] }, async (request, reply) => {
     const { content_id } = request.query as { content_id?: string };
     const client = await fastify.pg.connect();
     try {
@@ -125,7 +126,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 3. Delete Media
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const client = await fastify.pg.connect();
 
@@ -156,7 +157,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 4. Update Media (Rename)
-  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician'])] }, async (request, reply) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { file_name, content_id } = request.body as { file_name?: string; content_id?: number | null };
 
@@ -269,7 +270,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 6. Bulk delete media
-  fastify.post('/bulk-delete', async (request, reply) => {
+  fastify.post('/bulk-delete', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster'])] }, async (request, reply) => {
     const { ids } = request.body as { ids: number[] };
     if (!ids || !ids.length) {
       return reply.code(400).send({ error: 'No IDs provided' });
@@ -423,7 +424,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
   });
 
   // 9. Broadcast Media (Play Now through speakers)
-  fastify.post('/:id/broadcast', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'technician', 'commander'])] }, async (request, reply) => {
+  fastify.post('/:id/broadcast', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'broadcaster', 'commander'])] }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const client = await fastify.pg.connect();
 
@@ -456,7 +457,7 @@ export default async function mediaRoutes(fastify: FastifyInstance, options: Fas
           media_id: id,
           title: file.content_title || file.file_name,
           channel: channel.name,
-          file_url: `http://127.0.0.1:3000/uploads/${file.file_path}`,
+          file_url: `http://${getLocalIp()}:3000/uploads/${file.file_path}`,
           user: (request.user as any)?.full_name || 'Admin'
         });
 

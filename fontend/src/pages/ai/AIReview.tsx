@@ -25,6 +25,13 @@ interface ContentItem {
   author_rank?: string;
   unit_name?: string;
   audio_path?: string;
+  validation_results?: {
+    hasViolations: boolean;
+    violations: { word: string, category: string }[];
+    score: number;
+    feedback: string;
+    sentiment: string;
+  };
 }
 
 interface AIReviewProps {
@@ -129,11 +136,50 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
     }
   };
 
+  const handleReCheck = async (id: number) => {
+    try {
+      const token = localStorage.getItem('openclaw_token');
+      const res = await fetch(`http://${window.location.hostname}:3000/ai/analyze-policy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ text: selectedNews?.body })
+      });
+      if (res.ok) {
+        const results = await res.json();
+        setSelectedNews(prev => prev ? { ...prev, validation_results: results } : null);
+        // Also update in list
+        setPendingNews(prev => prev.map(n => n.id === id ? { ...n, validation_results: results } : n));
+      }
+    } catch (err) {
+      console.error('Re-check error:', err);
+    }
+  };
+
   const formatSafeDateTime = (dateStr: string | undefined) => {
     if (!dateStr) return '--';
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return '--';
     return d.toLocaleString('vi-VN');
+  };
+
+  // ── Mới: Hàm trợ giúp in đậm từ nhạy cảm ──
+  const renderHighlightedText = (text: string, violations: { word: string }[]) => {
+    if (!text || !violations || violations.length === 0) return text;
+    
+    // Tạo mảng các từ vi phạm để regex phát hiện
+    const words = violations.map(v => v.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const regex = new RegExp(`(${words.join('|')})`, 'gi');
+    
+    const parts = text.split(regex);
+    
+    return parts.map((part, i) => {
+      const isMatch = violations.some(v => v.word.toLowerCase() === part.toLowerCase());
+      return isMatch ? (
+        <strong key={i} style={{ color: '#f87171', background: 'rgba(248, 113, 113, 0.1)', padding: '0 4px', borderRadius: '4px', borderBottom: '2px solid #f87171' }}>
+          {part}
+        </strong>
+      ) : part;
+    });
   };
 
   return (
@@ -255,7 +301,9 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
                 {selectedNews.summary && (
                   <div style={{ padding: '1.2rem', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '12px', borderLeft: '4px solid #6366f1', marginBottom: '2rem' }}>
                     <h4 style={{ margin: '0 0 8px 0', fontSize: '0.85rem', fontWeight: 800, color: '#818cf8', textTransform: 'uppercase', letterSpacing: '1px' }}>Tóm tắt:</h4>
-                    <p style={{ margin: 0, color: '#cbd5e1', lineHeight: 1.6 }}>{selectedNews.summary}</p>
+                    <p style={{ margin: 0, color: '#cbd5e1', lineHeight: 1.6 }}>
+                      {renderHighlightedText(selectedNews.summary, selectedNews.validation_results?.violations || [])}
+                    </p>
                   </div>
                 )}
 
@@ -272,10 +320,53 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
                   </div>
                 )}
 
+                {/* ── Mới: Kết quả kiểm thử AI ── */}
+                <div style={{ marginBottom: '2.5rem', padding: '1.5rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Check size={20} color="#10b981" />
+                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Kết quả Rà soát AI:</h4>
+                    </div>
+                    <button 
+                      onClick={() => handleReCheck(selectedNews.id)}
+                      style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '4px 12px', borderRadius: '8px', color: '#10b981', fontSize: '0.75rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                    >
+                      <RefreshCw size={14} /> Kiểm tra lại
+                    </button>
+                  </div>
+                  
+                  {selectedNews.validation_results ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <div style={{ padding: '8px 15px', background: selectedNews.validation_results.score > 80 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(248, 113, 113, 0.2)', borderRadius: '12px', color: selectedNews.validation_results.score > 80 ? '#10b981' : '#f87171', fontWeight: 800 }}>
+                          Điểm AI: {selectedNews.validation_results.score}/100
+                        </div>
+                        <div style={{ fontSize: '0.9rem', color: '#94a3b8' }}>
+                          {selectedNews.validation_results.feedback}
+                        </div>
+                      </div>
+                      
+                      {selectedNews.validation_results.violations && selectedNews.validation_results.violations.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                          {selectedNews.validation_results.violations.map((v, i) => (
+                            <span key={i} style={{ padding: '4px 10px', background: 'rgba(248, 113, 113, 0.1)', border: '1px solid rgba(248, 113, 113, 0.2)', borderRadius: '6px', color: '#f87171', fontSize: '0.8rem' }}>
+                              [{v.category}] {v.word}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ color: '#64748b', fontSize: '0.9rem', fontStyle: 'italic' }}>
+                      Bản tin này chưa được AI rà soát. Hãy nhấn "Kiểm tra lại".
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: '16px', padding: '2rem', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '2.5rem' }}>
                   <h4 style={{ margin: '0 0 1.2rem 0', fontSize: '0.85rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px' }}>Nội dung chi tiết:</h4>
                   <div style={{ fontSize: '1.05rem', color: '#fff', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
-                    {selectedNews.body || 'Không có nội dung chi tiết.'}
+                    {renderHighlightedText(selectedNews.body || 'Không có nội dung chi tiết.', selectedNews.validation_results?.violations || [])}
                   </div>
                 </div>
 

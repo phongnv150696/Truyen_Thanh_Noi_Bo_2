@@ -18,7 +18,9 @@ import {
   Volume2,
   Settings,
   Play,
-  MoreVertical
+  MoreVertical,
+  Link2,
+  FolderOpen
 } from 'lucide-react'
 import AudioRecorder from '../../components/media/AudioRecorder'
 import AudioEditor from '../../components/media/AudioEditor'
@@ -79,6 +81,12 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const [isRecorderOpen, setIsRecorderOpen] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
   const [ttsProgress, setTtsProgress] = useState(0)
+
+  // Media Selection State
+  const [isMediaSelectModalOpen, setIsMediaSelectModalOpen] = useState(false)
+  const [allMediaFiles, setAllMediaFiles] = useState<any[]>([])
+  const [loadingMedia, setLoadingMedia] = useState(false)
+  const [pendingLibraryMediaId, setPendingLibraryMediaId] = useState<number | null>(null)
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
@@ -227,6 +235,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         author_id: user?.id || null
       })
       setUploadedAudio(null)
+      setPendingLibraryMediaId(null)
     }
     setIsModalOpen(true)
   }
@@ -251,7 +260,24 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
       })
 
       if (res.ok) {
+        const result = await res.json()
+        const newId = editingItem ? editingItem.id : result.id 
+
+        // Handle pending library media linking if this was a new item
+        if (pendingLibraryMediaId && !editingItem && newId) {
+          try {
+            await fetch(`http://${window.location.hostname}:3000/media/${pendingLibraryMediaId}`, {
+              method: 'PATCH',
+              headers: getHeaders(true),
+              body: JSON.stringify({ content_id: newId })
+            })
+          } catch (err) {
+            console.error('Failed to link pending media:', err)
+          }
+        }
+
         setIsModalOpen(false)
+        setPendingLibraryMediaId(null)
         fetchContents()
         alert(editingItem ? 'Cập nhật bản tin thành công!' : 'Tạo bản tin thành công!')
       } else {
@@ -403,6 +429,65 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     if (audioInputRef.current) audioInputRef.current.value = '';
   };
 
+  const fetchMediaFiles = async () => {
+    setLoadingMedia(true)
+    try {
+      const res = await fetch(`${API_URL}/media`, {
+        headers: getHeaders(false)
+      })
+      const data = await res.json()
+      setAllMediaFiles(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to fetch media:', err)
+    } finally {
+      setLoadingMedia(false)
+    }
+  }
+
+  const handleSelectMediaFromLibrary = async (mediaId: number) => {
+    if (!editingItem) {
+      // For NEW content, just mark it as pending and update UI
+      const selectedFile = allMediaFiles.find(f => f.id === mediaId)
+      if (selectedFile) {
+        setUploadedAudio({
+          id: selectedFile.id,
+          name: selectedFile.file_name,
+          duration: parseFloat(selectedFile.duration?.seconds || selectedFile.duration || 0),
+          url: `http://${window.location.hostname}:3000/uploads/${selectedFile.file_path}`
+        });
+        setPendingLibraryMediaId(mediaId)
+        setIsMediaSelectModalOpen(false)
+      }
+      return;
+    }
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_URL}/media/${mediaId}`, {
+        method: 'PATCH',
+        headers: getHeaders(true),
+        body: JSON.stringify({ content_id: editingItem.id })
+      })
+
+      if (res.ok) {
+        const { file } = await res.json()
+        setUploadedAudio({
+          id: file.id,
+          name: file.file_name,
+          duration: parseFloat(file.duration?.seconds || file.duration || 0),
+          url: `${API_URL}/uploads/${file.file_path}`
+        });
+        setIsMediaSelectModalOpen(false)
+        fetchContents()
+      } else {
+        alert('Không thể liên kết file âm thanh.')
+      }
+    } catch (err) {
+      console.error('Link media failed:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleImportWord = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -529,13 +614,17 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
 
     let text = formData.body;
     // Create a regex to match all violations (case-insensitive)
-    const sortedViolations = [...aiAnalysis.violations].sort((a, b) => b.length - a.length);
-    const pattern = new RegExp(`(${sortedViolations.join('|')})`, 'gi');
+    const sortedViolations = [...aiAnalysis.violations].sort((a: any, b: any) => (b.word?.length || 0) - (a.word?.length || 0));
+    const wordsToHighlight = sortedViolations.map((v: any) => v.word).filter(Boolean);
+    
+    if (wordsToHighlight.length === 0) return formData.body;
+    
+    const pattern = new RegExp(`(${wordsToHighlight.join('|')})`, 'gi');
 
     const parts = text.split(pattern);
 
     return parts.map((part, index) => {
-      const isMatch = sortedViolations.some(v => v.toLowerCase() === part.toLowerCase());
+      const isMatch = wordsToHighlight.some(word => word.toLowerCase() === part.toLowerCase());
       if (isMatch) {
         return (
           <mark key={index} style={{
@@ -759,8 +848,14 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                                     background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.85rem'
                                   }}
                                   onClick={() => { handlePlayNow(item.id); setMenuOpenId(null); }}
+                                  disabled={playingId === item.id}
                                 >
-                                  <Play size={16} /> Phát lên loa
+                                  {playingId === item.id ? (
+                                    <div className="animate-spin" style={{ width: '16px', height: '16px', border: '2px solid rgba(16, 185, 129, 0.2)', borderTopColor: '#10b981', borderRadius: '50%' }}></div>
+                                  ) : (
+                                    <Play size={16} />
+                                  )}
+                                  {playingId === item.id ? 'Đang kích hoạt...' : 'Phát lên loa'}
                                 </button>
                               )}
                               <button
@@ -905,6 +1000,11 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                       <button type="button" onClick={() => audioInputRef.current?.click()} disabled={uploadingAudio} className="glass-btn-sidebar" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
                         <Mic size={16} />
                         <span>{uploadingAudio ? 'Đang tải...' : 'Upload Audio'}</span>
+                      </button>
+
+                      <button type="button" onClick={() => { fetchMediaFiles(); setIsMediaSelectModalOpen(true); }} className="glass-btn-sidebar" style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8' }}>
+                        <FolderOpen size={16} />
+                        <span>Chọn từ Thư viện</span>
                       </button>
 
                       <button type="button" onClick={() => setIsRecorderOpen(true)} className="glass-btn-sidebar" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>
@@ -1240,14 +1340,15 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         </div>
 
         <style>{`
-              .voice-opt {
-                background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-                color: #94a3b8; padding: 10px; borderRadius: 8px; font-size: 0.85rem;
-                cursor: pointer; transition: all 0.2s;
-              }
-              .voice-opt:hover:not(:disabled) { background: rgba(255,255,255,0.08); color: white; }
-              .voice-opt.active { background: rgba(16, 185, 129, 0.1); border-color: #10b981; color: #10b981; font-weight: 700; }
-            `}</style>
+          .voice-opt {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            color: #94a3b8; padding: 10px; borderRadius: 8px; font-size: 0.85rem;
+            cursor: pointer; transition: all 0.2s;
+            flex: 1; text-align: center;
+          }
+          .voice-opt:hover:not(:disabled) { background: rgba(255,255,255,0.08); color: white; }
+          .voice-opt.active { background: rgba(16, 185, 129, 0.1); border-color: #10b981; color: #10b981; font-weight: 700; }
+        `}</style>
       </div>
     </div>
       )}
@@ -1326,7 +1427,115 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     </div>
   )}
 
-<style>{`
+      {/* Media Selection Modal */}
+      {isMediaSelectModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 3000,
+          padding: '20px'
+        }}>
+          <div className="glass-card animate-scale-in" style={{
+            width: '100%',
+            maxWidth: '600px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            padding: '28px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <h3 style={{ fontSize: '1.4rem', fontWeight: 700, margin: 0 }}>Chọn từ Thư viện</h3>
+              <button
+                onClick={() => setIsMediaSelectModalOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+              <input
+                type="text"
+                placeholder="Tìm nhanh file âm thanh..."
+                className="glass-input"
+                style={{ paddingLeft: '40px', width: '100%' }}
+                onChange={(e) => {
+                  const val = e.target.value.toLowerCase()
+                  // Search logic is handled by being able to see filenames
+                }}
+              />
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+              {loadingMedia ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Đang tải thư viện...</div>
+              ) : allMediaFiles.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>Thư viện trống.</div>
+              ) : (
+                allMediaFiles.map(file => (
+                  <div
+                    key={file.id}
+                    onClick={() => handleSelectMediaFromLibrary(file.id)}
+                    style={{
+                      padding: '12px 16px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      transition: 'all 0.2s'
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                      e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.2)';
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                      e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.05)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Volume2 size={16} color="#818cf8" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'white' }}>{file.file_name}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>ID: {file.id} • {file.mime_type?.split('/')[1]?.toUpperCase() || 'AUDIO'}</div>
+                      </div>
+                    </div>
+                    {file.content_id === editingItem?.id && (
+                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700 }}>ĐANG GẮN</div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+            
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setIsMediaSelectModalOpen(false)}
+                className="btn-secondary"
+                style={{ padding: '8px 24px' }}
+              >
+                Đóng
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
         .table-row { border-bottom: 1px solid rgba(255,255,255,0.03); transition: all 0.2s; }
         .table-row:hover { background: rgba(255,255,255,0.02); }
         .icon-btn { 
@@ -1345,6 +1554,6 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         }
         .glass-input:focus { border-color: #6366f1; background: rgba(255,255,255,0.05); }
       `}</style>
-    </div >
+    </div>
   )
 }

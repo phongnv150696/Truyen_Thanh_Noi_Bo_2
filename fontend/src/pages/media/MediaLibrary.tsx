@@ -17,7 +17,8 @@ import {
   ChevronRight,
   RefreshCw,
   Link2,
-  Radio
+  Radio,
+  Plus
 } from 'lucide-react'
 import AudioPlayerModal from './AudioPlayerModal'
 
@@ -584,12 +585,14 @@ export default function MediaLibrary({ onLogout }: { onLogout?: () => void }) {
                 <div
                   key={file.id}
                   className="table-row-hover"
+                  onClick={() => toggleItemSelect(file.id)}
                   style={{
                     padding: '0.8rem 1.2rem',
                     display: 'flex',
                     alignItems: 'center',
                     borderBottom: '1px solid rgba(255,255,255,0.02)',
                     transition: 'all 0.2s ease',
+                    cursor: 'pointer',
                     background: selectedIds.includes(file.id) ? 'rgba(99, 102, 241, 0.05)' : 'transparent'
                   }}
                 >
@@ -601,90 +604,106 @@ export default function MediaLibrary({ onLogout }: { onLogout?: () => void }) {
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                     />
                   </div>
-                  <div style={{ flex: 2, display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div
-                      onClick={() => togglePlay(file)}
-                      style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '10px',
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <Play size={16} color="#94a3b8" />
+                  <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '15px', minWidth: 0 }}>
+                    <div style={{
+                      width: '45px',
+                      height: '45px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      flexShrink: 0
+                    }}>
+                      <Radio size={22} color={file.content_id ? '#10b981' : '#6366f1'} />
                     </div>
-                    <div style={{ flex: 1 }}>
-                      {editingId === file.id ? (
-                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', width: '100%' }}>
-                          <input
-                            autoFocus
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleRename(file.id)
-                              if (e.key === 'Escape') setEditingId(null)
-                            }}
-                            style={{
-                              background: 'rgba(255,255,255,0.05)',
-                              border: '1px solid #6366f1',
-                              borderRadius: '4px',
-                              color: 'white',
-                              padding: '2px 8px',
-                              fontSize: '0.9rem',
-                              flex: 1
-                            }}
-                          />
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleRename(file.id); }}
-                            style={{ color: '#10b981', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                          >
-                            <Check size={16} />
-                          </button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setEditingId(null); }}
-                            style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-                      ) : (
-                        <h4 style={{
-                          margin: 0,
-                          fontSize: '0.95rem',
-                          fontWeight: 600,
-                          color: '#f1f5f9',
-                          maxWidth: '220px',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          whiteSpace: 'nowrap'
-                        }} title={file.file_name}>
-                          {file.file_name}
-                        </h4>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                        <p style={{ margin: 0, color: '#475569', fontSize: '0.75rem' }}>ID: {file.id} • {file.mime_type.split('/')[1]}</p>
+                    <div style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {editingId === file.id ? (
+                          <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={() => handleRename(file.id)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleRename(file.id)}
+                              autoFocus
+                              style={{
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid #6366f1',
+                                color: 'white',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                width: '100%'
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          file.file_name
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                        ID: {file.id} • {file.mime_type.split('/')[1]?.toUpperCase() || 'AUDIO'}
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ flex: 1.2, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <div style={{
-                      fontSize: '0.85rem',
-                      color: file.content_title ? '#818cf8' : '#475569',
-                      fontWeight: file.content_title ? 600 : 400,
-                      maxWidth: '180px',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {file.content_title || 'Thủ công/Chưa gắn'}
-                    </div>
-                    <span style={{ fontSize: '0.65rem', color: '#475569' }}>CID: {file.content_id || '--'}</span>
+                  <div style={{ flex: 1.2, display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                    {file.content_id ? (
+                      <div style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: '6px', 
+                        padding: '4px 10px', 
+                        background: 'rgba(129, 140, 248, 0.1)', 
+                        border: '1px solid rgba(129, 140, 248, 0.2)', 
+                        borderRadius: '20px',
+                        color: '#818cf8',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        maxWidth: '100%'
+                      }}>
+                        <Link2 size={12} />
+                        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {file.content_title || 'Đã gắn bản tin'}
+                        </span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLinkingFileId(file.id);
+                          setIsLinkingModalOpen(true);
+                        }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 10px',
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          border: '1px solid rgba(255, 255, 255, 0.05)',
+                          borderRadius: '20px',
+                          color: '#64748b',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                          zIndex: 10
+                        }}
+                        onMouseOver={(e) => {
+                          e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)';
+                          e.currentTarget.style.color = '#818cf8';
+                        }}
+                        onMouseOut={(e) => {
+                          e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+                          e.currentTarget.style.color = '#64748b';
+                        }}
+                      >
+                        <Plus size={12} />
+                        <span>Gắn bản tin</span>
+                      </button>
+                    )}
                   </div>
 
                   <div style={{ flex: 0.8, color: '#94a3b8', fontSize: '0.85rem' }}>
