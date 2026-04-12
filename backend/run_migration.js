@@ -7,9 +7,17 @@ import 'dotenv/config';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Use connection string from .env
+// Tự động nhận diện môi trường: Codespaces mặc định cổng 5432, Local dùng 5433
+const isCodespaces = process.env.CODESPACE_NAME || process.env.GITHUB_WORKSPACE;
+const defaultPort = isCodespaces ? '5432' : '5433';
+const defaultHost = isCodespaces ? 'postgres' : 'localhost';
+
+const connectionString = process.env.DATABASE_URL || `postgresql://postgres:YourStrongPassword@${defaultHost}:${defaultPort}/openclaw`;
+
+console.log(`🔌 Connecting to database at: ${connectionString.replace(/:[^:@]+@/, ':****@')}`);
+
 const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL
+  connectionString
 });
 
 async function run() {
@@ -27,11 +35,7 @@ async function run() {
 
   console.log('🚀 Starting database migration...');
 
-  if (!process.env.DATABASE_URL) {
-    console.error('❌ FATAL ERROR: DATABASE_URL is not defined in your .env file.');
-    console.log('💡 Please ensure you have a .env file in the backend directory with your PostgreSQL connection string.');
-    process.exit(1);
-  }
+// Fallback connection logic handled above
 
   for (const file of files) {
     const filePath = path.join(dbDir, file);
