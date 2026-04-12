@@ -9,7 +9,7 @@ INSERT INTO units (name, level) VALUES ('Bộ Chỉ Huy OpenClaw', 1);
 INSERT INTO users (username, password_hash, full_name, rank, role_id, unit_id)
 VALUES (
     'admin', 
-    '$2b$10$k1.n/O9G.HlR3.yvM.UvK.xJ9bWv.2xMv.C8x.Z.D.H.F.G.H.I.J', 
+    '$2a$12$N9qo8uLOickgx2ZMRZoMyeIjZAgNIvB9S6S.7i.9Vj4dM13tLwP5G', 
     'Quản trị viên Hệ thống', 
     'Đại tá', 
     (SELECT id FROM roles WHERE name = 'admin'), 
