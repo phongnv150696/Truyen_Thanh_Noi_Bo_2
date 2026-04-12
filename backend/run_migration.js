@@ -21,6 +21,7 @@ async function run() {
     'init_step4_ai_scoring.sql',
     'init_step5_system.sql',
     'init_step6_rbac.sql',
+    'init_step7_additional_features.sql',
     'seed_initial_data.sql'
   ];
 
