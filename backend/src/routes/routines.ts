@@ -181,7 +181,7 @@ export default async function routineRoutes(fastify: FastifyInstance, options: F
       // Log into session
       await client.query(
         `INSERT INTO broadcast_sessions (routine_id, channel_id, start_time, duration, status)
-         VALUES ($1, $2, NOW(), $3, 'completed')`,
+         VALUES ($1, $2, NOW(), ($3 || ' seconds')::interval, 'completed')`,
         [routine.id, channel.id, routine.duration || 300]
       );
 

@@ -41,7 +41,8 @@ ALTER TABLE broadcast_schedules ALTER COLUMN created_at TYPE TIMESTAMPTZ;
 -- 4. Cập nhật bảng Nhật ký phiên phát sóng (Broadcast Sessions)
 ALTER TABLE broadcast_sessions 
 ADD COLUMN IF NOT EXISTS routine_id INTEGER REFERENCES routine_commands(id) ON DELETE SET NULL,
-ADD COLUMN IF NOT EXISTS radio_id INTEGER REFERENCES radios(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS radio_id INTEGER REFERENCES radios(id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS duration INTERVAL;
 
 ALTER TABLE broadcast_sessions ALTER COLUMN start_time TYPE TIMESTAMPTZ;
 ALTER TABLE broadcast_sessions ALTER COLUMN end_time TYPE TIMESTAMPTZ;

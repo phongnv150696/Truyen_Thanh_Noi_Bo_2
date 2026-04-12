@@ -14,7 +14,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       let query = `
         SELECT 
           s.id, s.scheduled_time, 
-          COALESCE(s.duration, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
+          COALESCE(EXTRACT(EPOCH FROM s.duration)::int, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
           s.repeat_pattern, s.is_active,
           s.channel_id, s.content_id, s.radio_id, s.unit_id, s.is_all_units,
           s.triggered_at,
@@ -52,7 +52,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
         let fallback = `
           SELECT 
             s.id, s.scheduled_time, 
-            COALESCE(s.duration, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
+            COALESCE(EXTRACT(EPOCH FROM s.duration)::int, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
             s.repeat_pattern, s.is_active,
             s.channel_id, s.content_id,
             NULL as triggered_at,
@@ -92,7 +92,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       SELECT 
         s.id as schedule_id,
         s.scheduled_time, 
-        COALESCE(s.duration, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
+        COALESCE(EXTRACT(EPOCH FROM s.duration)::int, (SELECT EXTRACT(EPOCH FROM duration)::int FROM media_files WHERE content_id = s.content_id LIMIT 1), (SELECT duration FROM routine_commands WHERE id = s.routine_id)) as duration,
         s.repeat_pattern, s.is_active,
         s.channel_id, s.content_id, s.radio_id, s.unit_id, s.is_all_units, s.triggered_at,
         c.name as channel_name, c.mount_point,
@@ -376,7 +376,7 @@ export default async function scheduleRoutes(fastify: FastifyInstance, options: 
       if (broadcastInfo) {
         await client.query(`
           INSERT INTO broadcast_sessions (schedule_id, content_id, radio_id, channel_id, start_time, duration, status)
-          VALUES ($1, $2, $3, $4, NOW(), COALESCE($5, 300), 'completed')
+          VALUES ($1, $2, $3, $4, NOW(), COALESCE($5, INTERVAL '300 seconds'), 'completed')
         `, [id, broadcastInfo.content_id, broadcastInfo.radio_id, broadcastInfo.channel_id, broadcastInfo.duration]);
       }
 
