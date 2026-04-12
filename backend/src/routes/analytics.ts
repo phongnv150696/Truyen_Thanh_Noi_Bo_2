@@ -79,16 +79,18 @@ export default async function analyticsRoutes(fastify: FastifyInstance, options:
 
       // Top 10 Most Played Contents
       const topContentsRes = await client.query(`
-        SELECT ci.title as name, COUNT(bs.id)::integer as value
+        SELECT COALESCE(ci.title, r.name, ro.title, 'Bản tin trực tiếp') as name, COUNT(bs.id)::integer as value
         FROM broadcast_sessions bs
-        JOIN content_items ci ON bs.content_id = ci.id
-        JOIN users u ON ci.author_id = u.id
+        LEFT JOIN content_items ci ON bs.content_id = ci.id
+        LEFT JOIN radios r ON bs.radio_id = r.id
+        LEFT JOIN routine_commands ro ON bs.routine_id = ro.id
+        LEFT JOIN users u ON ci.author_id = u.id
         WHERE bs.status = 'completed'
-        ${!isAdmin ? ' AND u.unit_id = ANY($1)' : ''}
-        GROUP BY ci.title
+        ${!isAdmin ? ' AND (u.unit_id = ANY($1) OR bs.radio_id IS NOT NULL OR bs.routine_id IS NOT NULL)' : ''}
+        GROUP BY name
         ORDER BY value DESC
         LIMIT 10
-      `, params);
+      `, params.length > 0 ? params : []);
       const topContents = topContentsRes.rows;
 
       return {
