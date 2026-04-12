@@ -1,14 +1,12 @@
-version: '3.8'
-
 services:
   # 1. Database PostgreSQL
   postgres:
     image: postgres:16-alpine
     container_name: openclaw-postgres
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-YourStrongPassword}
+      POSTGRES_DB: ${POSTGRES_DB:-openclaw}
     ports:
       - "5432:5432"
     volumes:
@@ -19,7 +17,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: openclaw-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD}
+    command: redis-server --requirepass ${REDIS_PASSWORD:-YourStrongPassword}
     ports:
       - "6379:6379"
     volumes:
@@ -35,9 +33,9 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-YourStrongPassword}@postgres:5432/${POSTGRES_DB:-openclaw}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-YourStrongPassword}@redis:6379
+      - JWT_SECRET=${JWT_SECRET:-TdmbvW7qlcSQQ6QrxM1DSrH0ucj7wcwAhYaDmqqDGHOhol7PVAyiAEVU9zTvEFId5}
       - PORT=3000
       - NODE_ENV=production
     volumes:
