@@ -8,9 +8,15 @@ const getApiUrl = () => {
     
     // 1. Handle GitHub Codespaces
     if (hostname.includes('.github.dev') || hostname.includes('.app.github.dev')) {
-        // Regex to find the port part (e.g., -5173 or -80) and replace with -3000
-        const backendHostname = hostname.replace(/-\d+\./, '-3000.');
-        return `https://${backendHostname}`;
+        // If the hostname already has a port part (e.g., -5173.), replace it
+        if (/-\d+\./.test(hostname)) {
+            const backendHostname = hostname.replace(/-\d+\./, '-3000.');
+            return `https://${backendHostname}`;
+        }
+        // If it doesn't have a port part, it's likely port 80/443, so we append -3000 to the first part
+        const parts = hostname.split('.');
+        parts[0] = parts[0] + '-3000';
+        return `https://${parts.join('.')}`;
     }
     
     // 2. Default to port 3000 on the current hostname (Localhost or VPS IP)
@@ -24,15 +30,18 @@ export const WEBSOCKET_URL = (() => {
     const { hostname, protocol } = window.location;
     const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
     
-    // Check if we are in GitHub Codespaces
     if (hostname.includes('.github.dev') || hostname.includes('.app.github.dev')) {
-        // Codespaces uses subdomains for ports: <name>-80.<region>.github.dev
-        // We need to change the port part to -3000 for the backend
-        const backendHostname = hostname.replace(/-\d+\./, '-3000.');
+        let backendHostname = hostname;
+        if (/-\d+\./.test(hostname)) {
+            backendHostname = hostname.replace(/-\d+\./, '-3000.');
+        } else {
+            const parts = hostname.split('.');
+            parts[0] = parts[0] + '-3000';
+            backendHostname = parts.join('.');
+        }
         return `${wsProtocol}//${backendHostname}/ws`;
     }
     
-    // Default/Local/VPS behavior (same host, port 3000)
     return `${wsProtocol}//${hostname}:3000/ws`;
 })();
 export const API_BASE_URL = API_URL; // Alias for compatibility
