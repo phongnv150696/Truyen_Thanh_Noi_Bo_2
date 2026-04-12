@@ -18,6 +18,8 @@ const getApiUrl = () => {
 };
 
 export const API_URL = getApiUrl();
+console.log('📡 Detected API_URL:', API_URL);
+
 export const WEBSOCKET_URL = (() => {
     const { hostname, protocol } = window.location;
     const wsProtocol = protocol === 'https:' ? 'wss:' : 'ws:';
