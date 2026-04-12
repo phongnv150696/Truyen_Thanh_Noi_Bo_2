@@ -14,10 +14,11 @@ import {
   Lock,
   ShieldCheck,
   CheckSquare,
-  Briefcase
+  Briefcase,
+  MapPin
 } from 'lucide-react';
 
-const API_URL = `http://${window.location.hostname}:3000`;
+import { API_URL } from '../../config'
 
 interface UserData {
   id: number;
@@ -28,19 +29,24 @@ interface UserData {
   email: string;
   role_name: string;
   unit_name: string;
+  unit_id: number;
   created_at: string;
 }
 
 const getRoleDisplayName = (roleName: string) => {
+  if (!roleName) return 'Thành viên';
+  const roleLower = roleName.toLowerCase();
   const mapping: Record<string, string> = {
-    'admin': 'Quản trị viên',
-    'technician': 'Kỹ thuật viên',
-    'commander': 'Ban chỉ huy',
-    'editor': 'Biên tập viên',
-    'broadcaster': 'Phát thanh viên',
-    'listener': 'Thành viên'
+    'admin': 'Admin',
+    'editor': 'Quản trị viên',
+    'commander': 'Quản lý',
+    'listener': 'Thành viên',
+    'user': 'Thành viên',
+    'quản lý': 'Quản lý',
+    'quản trị viên': 'Quản trị viên',
+    'thành viên': 'Thành viên'
   };
-  return mapping[roleName?.toLowerCase()] || roleName;
+  return mapping[roleLower] || roleName;
 };
 
 interface AuditLog {
@@ -57,6 +63,8 @@ export default function UserProfile({ onLogout }: { onLogout?: () => void }) {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [units, setUnits] = useState<any[]>([]);
+  const [selectedLevels, setSelectedLevels] = useState<{ [key: number]: string | number }>({ 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' });
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Form States
@@ -87,6 +95,7 @@ export default function UserProfile({ onLogout }: { onLogout?: () => void }) {
           position: data.position || '',
           email: data.email || ''
         });
+        return data;
       }
     } catch (err) {
       console.error('Error fetching profile:', err);
@@ -105,10 +114,54 @@ export default function UserProfile({ onLogout }: { onLogout?: () => void }) {
     }
   };
 
+  const fetchUnits = async () => {
+    try {
+      const res = await fetch(`${API_URL}/users/units`, { headers: getHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setUnits(data);
+        return data; 
+      }
+    } catch (err) {
+      console.error('Error fetching units:', err);
+    }
+    return [];
+  };
+
+  const getUnitsByLevel = (level: number, parentId: string | number | null) => {
+    if (level === 1) return units.filter(u => u.level === 1);
+    if (!parentId) return [];
+    return units.filter(u => u.level === level && u.parent_id === Number(parentId));
+  };
+
+  const handleLevelChange = (level: number, value: string | number) => {
+    const newLevels = { ...selectedLevels, [level]: value };
+    for (let l = level + 1; l <= 6; l++) newLevels[l] = '';
+    setSelectedLevels(newLevels);
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchProfile(), fetchLogs()]);
+      const [uData, unitsData] = await Promise.all([fetchProfile(), fetchUnits(), fetchLogs()]);
+      
+      // Initialize levels if user has a unit
+      const resUserData = (uData as any);
+      if (resUserData?.unit_id) {
+        const allUnits = unitsData || [];
+        const levels: { [key: number]: string | number } = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
+        let currentId: number | null = resUserData.unit_id;
+        
+        while (currentId) {
+          const u = allUnits.find((unit: any) => Number(unit.id) === Number(currentId));
+          if (u) { 
+            levels[u.level] = u.id; 
+            currentId = u.parent_id; 
+          }
+          else break;
+        }
+        setSelectedLevels(levels);
+      }
       setLoading(false);
     };
     loadData();
@@ -118,11 +171,22 @@ export default function UserProfile({ onLogout }: { onLogout?: () => void }) {
     e.preventDefault();
     setSubmitting(true);
     setMessage(null);
+    // Resolve final unit ID
+    let finalUnit: string | number = '';
+    let parentUnitId = null;
+    for (let l = 6; l >= 1; l--) {
+      if (selectedLevels[l]) { 
+        finalUnit = selectedLevels[l]; 
+        parentUnitId = selectedLevels[l - 1] || null;
+        break; 
+      }
+    }
+
     try {
       const res = await fetch(`${API_URL}/profile/me`, {
         method: 'PATCH',
         headers: getHeaders(),
-        body: JSON.stringify(profileForm)
+        body: JSON.stringify({ ...profileForm, unit_id: finalUnit, parent_unit_id: parentUnitId })
       });
       if (res.ok) {
         const updated = await res.json();
@@ -379,9 +443,49 @@ export default function UserProfile({ onLogout }: { onLogout?: () => void }) {
                 </div>
 
                 <div className="premium-form-group" style={{ marginBottom: 0 }}>
-                  <label className="premium-label">Đơn vị công tác</label>
-                  <div style={{ padding: '14px 18px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', color: '#94a3b8', fontSize: '0.95rem', height: '52px', display: 'flex', alignItems: 'center' }}>
-                    {userData?.unit_name || 'Đang cập nhật...'}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem', fontWeight: 700, color: '#818cf8', fontSize: '1rem' }}>
+                    <MapPin size={18} /> ĐƠN VỊ CÔNG TÁC (PHÂN CẤP 6 CẤP)
+                  </label>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    {[
+                      { l: 1, n: 'Quân khu' }, { l: 2, n: 'Sư đoàn' },
+                      { l: 3, n: 'Trung đoàn' }, { l: 4, n: 'Tiểu đoàn' },
+                      { l: 5, n: 'Đại đội' }, { l: 6, n: 'Trung đội' }
+                    ].map((levelInfo) => {
+                      const currentVal = selectedLevels[levelInfo.l];
+                      const existingUnit = units.find(u => u.id === Number(currentVal));
+                      const displayVal = existingUnit ? existingUnit.name : String(currentVal || '');
+                      const suggestions = getUnitsByLevel(levelInfo.l, selectedLevels[levelInfo.l - 1])
+                        .filter(u => u.name.toLowerCase().includes(displayVal.toLowerCase()));
+
+                      return (
+                        <div key={levelInfo.l} style={{ position: 'relative' }}>
+                          <label style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', display: 'block', fontWeight: 600, textTransform: 'uppercase' }}>{levelInfo.n}</label>
+                          <input 
+                            type="text"
+                            className="premium-input"
+                            style={{ fontSize: '0.85rem', padding: '10px 14px' }}
+                            placeholder={`Tìm/thêm ${levelInfo.n}...`}
+                            value={displayVal}
+                            onChange={(e) => handleLevelChange(levelInfo.l, e.target.value)}
+                          />
+                          {displayVal && !existingUnit && suggestions.length > 0 && (
+                            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', marginTop: '6px', maxHeight: '180px', overflowY: 'auto', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+                              {suggestions.map(u => (
+                                <div 
+                                  key={u.id}
+                                  style={{ padding: '10px 14px', fontSize: '0.85rem', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#cbd5e1' }}
+                                  onMouseDown={() => handleLevelChange(levelInfo.l, String(u.id))}
+                                >
+                                  {u.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 

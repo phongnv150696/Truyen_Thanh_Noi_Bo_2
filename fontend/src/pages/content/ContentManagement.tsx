@@ -19,13 +19,13 @@ import {
   Settings,
   Play,
   MoreVertical,
-  Link2,
   FolderOpen
 } from 'lucide-react'
 import AudioRecorder from '../../components/media/AudioRecorder'
 import AudioEditor from '../../components/media/AudioEditor'
+import { useNotification } from '../../components/NotificationProvider'
 
-const API_URL = `http://${window.location.hostname}:3000`;
+import { API_URL } from '../../config'
 
 interface ContentItem {
   id: number;
@@ -52,41 +52,40 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<ContentItem | null>(null)
-  const [processingTTS, setProcessingTTS] = useState<number | null>(null)
-  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false)
-  const [rawAIInput, setRawAIInput] = useState('')
-  const [generatingScript, setGeneratingScript] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<ContentItem | null>(null)
   const [playingId, setPlayingId] = useState<number | null>(null)
+  const { showNotification, confirm } = useNotification()
 
   // New AI & TTS State
   const [isTTSModalOpen, setIsTTSModalOpen] = useState(false)
+  const [ttsProgress, setTtsProgress] = useState(0)
+  const [ttsStatus, setTtsStatus] = useState('Đang kết nối...')
+  const [processingTTS, setProcessingTTS] = useState<number | string | null>(null)
   const [targetTTSItem, setTargetTTSItem] = useState<ContentItem | null>(null)
   const [ttsOptions, setTtsOptions] = useState({
-    voice: 'vi-VN-HoaiMyNeural',
+    voice: 'valtec-NF',
     rate: '+0%',
     pitch: '+0Hz'
   })
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [aiAnalysis, setAiAnalysis] = useState<{ feedback?: string, isSensitive?: boolean, violations?: string[] } | null>(null)
-  const [showHighlightPreview, setShowHighlightPreview] = useState(false)
   const [menuOpenId, setMenuOpenId] = useState<number | null>(null)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const audioInputRef = useRef<HTMLInputElement>(null)
   const [importingWord, setImportingWord] = useState(false)
   const [uploadingAudio, setUploadingAudio] = useState(false)
   const [uploadedAudio, setUploadedAudio] = useState<{ id?: number, name: string, duration: number, url?: string } | null>(null)
   const [isRecorderOpen, setIsRecorderOpen] = useState(false)
   const [isEditorOpen, setIsEditorOpen] = useState(false)
-  const [ttsProgress, setTtsProgress] = useState(0)
 
   // Media Selection State
   const [isMediaSelectModalOpen, setIsMediaSelectModalOpen] = useState(false)
   const [allMediaFiles, setAllMediaFiles] = useState<any[]>([])
   const [loadingMedia, setLoadingMedia] = useState(false)
   const [pendingLibraryMediaId, setPendingLibraryMediaId] = useState<number | null>(null)
+  const [activeAudio, setActiveAudio] = useState<{ url: string; title: string; id: number } | null>(null)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
@@ -147,7 +146,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   }, []);
 
   const handlePlayNow = async (id: number) => {
-    if (!confirm('Bạn có chắc chắn muốn phát bản tin này lên loa toàn đơn vị ngay lập tức?')) return;
+    if (!(await confirm('Bạn có chắc chắn muốn phát bản tin này lên loa toàn đơn vị ngay lập tức?'))) return;
     setPlayingId(id);
     try {
       const res = await fetch(`${API_URL}/content/${id}/play`, {
@@ -156,13 +155,13 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
       });
       const data = await res.json();
       if (res.ok) {
-        alert(data.message || 'Đã kích hoạt phát sóng thành công!');
+        showNotification('success', data.message || 'Đã kích hoạt phát sóng thành công!');
       } else {
-        alert('Lỗi: ' + (data.error || 'Không thể phát bản tin. Hãy đảm bảo bản tin đã được duyệt và có file âm thanh.'));
+        showNotification('error', 'Lỗi: ' + (data.error || 'Không thể phát bản tin. Hãy đảm bảo bản tin đã được duyệt và có file âm thanh.'));
       }
     } catch (err) {
       console.error('Play now error:', err);
-      alert('Lỗi kết nối máy chủ');
+      showNotification('error', 'Lỗi kết nối máy chủ');
     } finally {
       setPlayingId(null);
     }
@@ -171,7 +170,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const fetchContents = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`http://${window.location.hostname}:3000/content`, {
+      const res = await fetch(`${API_URL}/content`, {
         headers: getHeaders(false)
       })
       if (!res.ok) {
@@ -189,6 +188,13 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     }
   }
 
+  // Lắng nghe tín hiệu mở tác vụ "Tạo Bản tin mới" từ Sidebar
+  useEffect(() => {
+    const handleOpenCreate = () => handleOpenModal();
+    window.addEventListener('openCreateBulletinModal', handleOpenCreate);
+    return () => window.removeEventListener('openCreateBulletinModal', handleOpenCreate);
+  }, []);
+
   const handleOpenModal = async (item?: ContentItem) => {
     if (item) {
       setEditingItem(item)
@@ -203,7 +209,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
       if (item.has_audio) {
         // Fetch specific media info
         try {
-          const res = await fetch(`http://${window.location.hostname}:3000/media?content_id=${item.id}`, {
+          const res = await fetch(`${API_URL}/media?content_id=${item.id}`, {
             headers: getHeaders(false)
           });
           const media = await res.json();
@@ -213,7 +219,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
               id: latest.id,
               name: latest.file_name,
               duration: parseFloat(latest.duration?.seconds || latest.duration || 0),
-              url: `http://${window.location.hostname}:3000/uploads/${latest.file_path}`
+              url: `${API_URL}/uploads/${latest.file_path}`
             });
           } else {
             setUploadedAudio({ name: 'Âm thanh hiện tại', duration: 0 });
@@ -244,17 +250,22 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     e.preventDefault()
 
     // Ensure author_id is set for new content
+    const baseTitle = formData.title.trim() ? formData.title : (uploadedAudio?.name ? `Bản tin âm thanh: ${uploadedAudio.name}` : 'Bản tin mới (Không tên)');
+    const baseBody = formData.body.trim() ? formData.body : (uploadedAudio ? '[Bản tin tập trung nội dung âm thanh]' : '');
+    
     const finalData = {
       ...formData,
+      title: baseTitle,
+      body: baseBody,
       tags: formData.tags.split(',').map(t => t.trim()).filter(t => t),
       author_id: editingItem ? formData.author_id : user?.id
     }
 
     setLoading(true)
     try {
-      const url = `http://${window.location.hostname}:3000/content${editingItem ? `/${editingItem.id}` : ''}`
+      const url = `${API_URL}/content${editingItem ? `/${editingItem.id}` : ''}`
       const res = await fetch(url, {
-        method: editingItem ? 'PUT' : 'POST',
+        method: editingItem ? 'PATCH' : 'POST',
         headers: getHeaders(true),
         body: JSON.stringify(finalData)
       })
@@ -266,7 +277,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         // Handle pending library media linking if this was a new item
         if (pendingLibraryMediaId && !editingItem && newId) {
           try {
-            await fetch(`http://${window.location.hostname}:3000/media/${pendingLibraryMediaId}`, {
+            await fetch(`${API_URL}/media/${pendingLibraryMediaId}`, {
               method: 'PATCH',
               headers: getHeaders(true),
               body: JSON.stringify({ content_id: newId })
@@ -279,10 +290,10 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         setIsModalOpen(false)
         setPendingLibraryMediaId(null)
         fetchContents()
-        alert(editingItem ? 'Cập nhật bản tin thành công!' : 'Tạo bản tin thành công!')
+        showNotification('success', editingItem ? 'Cập nhật bản tin thành công!' : 'Tạo bản tin thành công!')
       } else {
         const errorData = await res.json().catch(() => ({ message: 'Lỗi không xác định' }))
-        alert(`Lỗi: ${errorData.message || 'Không thể lưu bản tin'}`)
+        showNotification('error', `Lỗi: ${errorData.message || 'Không thể lưu bản tin'}`)
       }
     } catch (err) {
       console.error('Save failed:', err)
@@ -299,7 +310,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const confirmDelete = async () => {
     if (!itemToDelete) return
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/content/${itemToDelete.id}`, {
+      const res = await fetch(`${API_URL}/content/${itemToDelete.id}`, {
         method: 'DELETE',
         headers: getHeaders(false)
       })
@@ -309,12 +320,12 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         setItemToDelete(null)
       } else {
         const errorData = await res.json().catch(() => ({ message: 'Lỗi không xác định' }))
-        alert(`Không thể xóa bản tin: ${errorData.message || 'Xảy ra lỗi phía máy chủ'}`)
+        showNotification('error', `Không thể xóa bản tin: ${errorData.message || 'Xảy ra lỗi phía máy chủ'}`)
         setIsDeleteModalOpen(false) // Đóng modal để tránh treo
       }
     } catch (err) {
       console.error('Delete failed:', err)
-      alert('Không thể kết nối tới máy chủ để xóa bản tin.')
+      showNotification('error', 'Không thể kết nối tới máy chủ để xóa bản tin.')
       setIsDeleteModalOpen(false)
     }
   }
@@ -339,41 +350,72 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
 
   const handleGenerateTTS = async () => {
     if (!targetTTSItem) return;
+    const isEditorMode = targetTTSItem.id === -999;
     setProcessingTTS(targetTTSItem.id)
-    setTtsProgress(5) // Start at 5%
-
+    setTtsProgress(5)
+    setTtsStatus('Khởi tạo dịch vụ AI...')
     // Simulate progress
     const progressInterval = setInterval(() => {
       setTtsProgress(prev => {
-        if (prev >= 90) return prev;
-        return prev + 5;
+        if (prev < 25) {
+          setTtsStatus('Phân tích kịch bản...');
+          return prev + 1.5;
+        }
+        if (prev < 55) {
+          setTtsStatus('Tạo giọng đọc AI...');
+          return prev + 1;
+        }
+        if (prev < 85) {
+          setTtsStatus('Đồng bộ âm thanh...');
+          return prev + 0.8;
+        }
+        if (prev < 98) {
+          setTtsStatus('Nén chuẩn MP3...');
+          return prev + 0.5;
+        }
+        return prev;
       })
-    }, 400);
+    }, 250);
 
     try {
-      const slug = slugify(targetTTSItem.title)
-      const res = await fetch(`http://${window.location.hostname}:3000/media/tts`, {
+      const slug = slugify(isEditorMode ? (formData.title || 'TTS') : targetTTSItem.title)
+      const res = await fetch(`${API_URL}/media/tts`, {
         method: 'POST',
         headers: getHeaders(true),
         body: JSON.stringify({
-          text: targetTTSItem.body,
+          text: isEditorMode ? formData.body : targetTTSItem.body,
           file_name: `TTS_${slug}.mp3`,
-          content_id: targetTTSItem.id,
+          content_id: isEditorMode ? (editingItem?.id || undefined) : targetTTSItem.id,
           ...ttsOptions
         })
       })
       if (res.ok) {
+        const data = await res.json()
         setTtsProgress(100)
-        setTimeout(() => {
-          setIsTTSModalOpen(false)
-          alert('Tạo file âm thanh thành công! Đã lưu vào Thư viện Media.')
-        }, 300)
+        
+        // Update uploadedAudio so it can be played immediately
+        const newAudio = {
+          id: data.fileId,
+          name: data.fileName,
+          duration: data.duration,
+          url: `${API_URL}/uploads/${data.filePath}`
+        };
+        
+        if (isEditorMode) {
+          setUploadedAudio(newAudio);
+          setPendingLibraryMediaId(newAudio.id);
+          showNotification('success', 'Tạo file âm thanh thành công! Audio này đã được đính kèm vào phần soạn thảo bản tin bên trái.');
+          setIsTTSModalOpen(false); // Close TTS modal to return to Editor
+        } else {
+          setUploadedAudio(newAudio);
+          showNotification('success', 'Tạo file âm thanh thành công! Bạn có thể nghe thử ngay bây giờ.')
+        }
       } else {
-        alert('Lỗi khi tạo TTS.')
+        showNotification('error', 'Lỗi khi tạo TTS.')
       }
     } catch (err) {
       console.error('TTS generation failed:', err)
-      alert('Không thể kết nối tới dịch vụ TTS.')
+      showNotification('error', 'Không thể kết nối tới dịch vụ TTS.')
     } finally {
       clearInterval(progressInterval)
       setProcessingTTS(null)
@@ -387,7 +429,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     if (editingItem) formDataUpload.append('content_id', editingItem.id.toString());
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/media/upload`, {
+      const res = await fetch(`${API_URL}/media/upload`, {
         method: 'POST',
         headers: getHeaders(true, true),
         body: formDataUpload
@@ -399,18 +441,18 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
           id: data.fileId,
           name: fileName,
           duration: data.duration,
-          url: data.fileId ? `http://${window.location.hostname}:3000/uploads/${data.filePath || ''}` : undefined // filePath might need to be returned if new
+          url: data.fileId ? `${API_URL}/uploads/${data.filePath || ''}` : undefined // filePath might need to be returned if new
         });
-        alert(`Tải lên thành công! Thời lượng: ${Math.round(data.duration)} giây.`);
+        showNotification('success', `Tải lên thành công! Thời lượng: ${Math.round(data.duration)} giây.`);
         fetchContents();
         setIsRecorderOpen(false);
       } else {
         const err = await res.json();
-        alert(err.error || "Lỗi khi tải file");
+        showNotification('error', err.error || "Lỗi khi tải file");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Không thể kết nối tới máy chủ.");
+      showNotification('error', "Không thể kết nối tới máy chủ.");
     } finally {
       setUploadingAudio(false);
     }
@@ -419,9 +461,8 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const handleUploadAudio = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (file.size > 20 * 1024 * 1024) {
-      alert("File quá lớn. Vui lòng chọn file dưới 20MB.");
+      showNotification('warning', "File quá lớn. Vui lòng chọn file dưới 20MB.");
       return;
     }
 
@@ -453,7 +494,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
           id: selectedFile.id,
           name: selectedFile.file_name,
           duration: parseFloat(selectedFile.duration?.seconds || selectedFile.duration || 0),
-          url: `http://${window.location.hostname}:3000/uploads/${selectedFile.file_path}`
+          url: `${API_URL}/uploads/${selectedFile.file_path}`
         });
         setPendingLibraryMediaId(mediaId)
         setIsMediaSelectModalOpen(false)
@@ -479,7 +520,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         setIsMediaSelectModalOpen(false)
         fetchContents()
       } else {
-        alert('Không thể liên kết file âm thanh.')
+        showNotification('error', 'Không thể liên kết file âm thanh.')
       }
     } catch (err) {
       console.error('Link media failed:', err)
@@ -491,9 +532,8 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   const handleImportWord = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     if (!file.name.endsWith('.docx')) {
-      alert('Vui lòng chỉ chọn tệp định dạng .docx');
+      showNotification('warning', 'Vui lòng chỉ chọn tệp định dạng .docx');
       return;
     }
 
@@ -502,7 +542,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     formDataUpload.append('file', file);
 
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/content/import-word`, {
+      const res = await fetch(`${API_URL}/content/import-word`, {
         method: 'POST',
         headers: getHeaders(false),
         body: formDataUpload
@@ -515,17 +555,17 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
           title: formData.title || data.title,
           body: data.text
         });
-        alert('Đã nhập nội dung từ file Word thành công!');
+        showNotification('success', 'Đã nhập nội dung từ file Word thành công!');
       } else {
         const error = await res.json();
-        alert(`Lỗi: ${error.error || 'Không thể nhập file Word'}`);
+        showNotification('error', `Lỗi: ${error.error || 'Không thể nhập file Word'}`);
       }
     } catch (err) {
       console.error('Import Word failed:', err);
-      alert('Không thể kết nối tới máy chủ.');
+      showNotification('error', 'Không thể kết nối tới máy chủ.');
     } finally {
       setImportingWord(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      e.target.value = '';
     }
   }
 
@@ -533,7 +573,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     if (!formData.body.trim()) return;
     setIsAnalyzing(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/ai/summarize`, {
+      const res = await fetch(`${API_URL}/ai/summarize`, {
         method: 'POST',
         headers: getHeaders(true),
         body: JSON.stringify({ text: formData.body })
@@ -549,98 +589,34 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
     }
   }
 
-  const handleAnalyzePolicy = async () => {
+  const handleFormatScript = async () => {
     if (!formData.body.trim()) return;
     setIsAnalyzing(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/ai/analyze-policy`, {
+      const res = await fetch(`${API_URL}/ai/generate-script`, {
         method: 'POST',
         headers: getHeaders(true),
-        body: JSON.stringify({ text: formData.body })
+        body: JSON.stringify({ rawText: formData.body })
       });
 
       if (res.ok) {
         const data = await res.json();
-        setAiAnalysis({
-          isSensitive: data.hasViolations,
-          feedback: data.feedback,
-          violations: data.violations || []
+        setFormData({
+          ...formData,
+          // title: data.title, // Giữ nguyên tiêu đề người dùng đã nhập
+          body: data.script,
+          // summary: `Bản tin tự động chuẩn hóa (${data.wordCount} từ, ~${data.estimatedDuration})` // Giữ nguyên tóm tắt
         });
-        if (data.hasViolations) setShowHighlightPreview(true);
+        showNotification('success', 'Đã dọn dẹp và chuẩn hóa nội dung thành công!');
+      } else {
+        showNotification('error', 'Lỗi: Không thể chuẩn hóa kịch bản lúc này.');
       }
     } catch (err) {
-      console.error('Policy check failed:', err);
+      console.error('Format script failed:', err);
+      showNotification('error', 'Không thể kết nối dịch vụ AI.');
     } finally {
       setIsAnalyzing(false);
     }
-  }
-
-  const handleGenerateScript = async () => {
-    if (!rawAIInput.trim()) return;
-    setGeneratingScript(true);
-    try {
-      const res = await fetch(`http://${window.location.hostname}:3000/ai/generate-script`, {
-        method: 'POST',
-        headers: getHeaders(true),
-        body: JSON.stringify({ rawText: rawAIInput })
-      });
-      if (res.ok) {
-        const data = await res.json(); // Assuming the response contains title, script, wordCount, estimatedDuration
-        // Populate the form with AI generated content and current user ID
-        setFormData({
-          ...formData,
-          title: data.title,
-          body: data.script,
-          summary: `Bản tin tự động (${data.wordCount} từ, ~${data.estimatedDuration})`,
-          author_id: user?.id
-        })
-        setIsAIAssistantOpen(false)
-        setEditingItem(null)
-        setIsModalOpen(true)
-      } else {
-        alert('Lỗi khi gọi AI trợ lý.');
-      }
-    } catch (err) {
-      console.error('AI generation failed:', err);
-      alert('Không thể kết nối dịch vụ AI.');
-    } finally {
-      setGeneratingScript(false);
-    }
-  }
-
-  const renderHighlightedText = () => {
-    if (!formData.body) return null;
-    if (!aiAnalysis?.violations || aiAnalysis.violations.length === 0) return formData.body;
-
-    let text = formData.body;
-    // Create a regex to match all violations (case-insensitive)
-    const sortedViolations = [...aiAnalysis.violations].sort((a: any, b: any) => (b.word?.length || 0) - (a.word?.length || 0));
-    const wordsToHighlight = sortedViolations.map((v: any) => v.word).filter(Boolean);
-    
-    if (wordsToHighlight.length === 0) return formData.body;
-    
-    const pattern = new RegExp(`(${wordsToHighlight.join('|')})`, 'gi');
-
-    const parts = text.split(pattern);
-
-    return parts.map((part, index) => {
-      const isMatch = wordsToHighlight.some(word => word.toLowerCase() === part.toLowerCase());
-      if (isMatch) {
-        return (
-          <mark key={index} style={{
-            background: 'rgba(239, 68, 68, 0.3)',
-            color: '#ef4444',
-            padding: '2px 4px',
-            borderRadius: '4px',
-            borderBottom: '2px solid #ef4444',
-            fontWeight: 700
-          }}>
-            {part}
-          </mark>
-        );
-      }
-      return part;
-    });
   }
 
   const getStatusIcon = (item: ContentItem) => {
@@ -686,13 +662,13 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
   }, [searchTerm])
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in" style={{ width: '100%' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: 800, margin: 0 }}>Quản lý Bản tin</h1>
           <p style={{ color: '#94a3b8', marginTop: '0.4rem' }}>Soạn thảo và quản lý các nội dung phát thanh trong hệ thống.</p>
         </div>
-        {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+        {(['admin', 'quản trị viên', 'editor', 'commander', 'quản lý'].includes(user?.role_name?.toLowerCase() || '')) && (
           <button className="btn-primary" onClick={() => handleOpenModal()} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Plus size={20} />
             <span>Tạo bản tin mới</span>
@@ -809,8 +785,37 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                     <td style={{ padding: '1.2rem 1.5rem', textAlign: 'right' }}>
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
                         <button className="icon-btn" title="Xem" style={{ color: '#818cf8', background: 'rgba(99, 102, 241, 0.1)' }} onClick={() => handleOpenModal(item)}><Eye size={18} /></button>
-                        {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+                        {(['admin', 'quản trị viên', 'editor', 'commander', 'quản lý'].includes(user?.role_name?.toLowerCase() || '')) && (
                           <button className="icon-btn delete" title="Xóa" style={{ color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)' }} onClick={() => handleDelete(item)}><Trash2 size={18} /></button>
+                        )}
+                        {item.has_audio && (
+                          <button 
+                            className="icon-btn" 
+                            title="Nghe nhanh trên trình duyệt" 
+                            style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}
+                            onClick={async () => {
+                              try {
+                                const res = await fetch(`${API_URL}/media?content_id=${item.id}`, {
+                                  headers: { 'Authorization': `Bearer ${localStorage.getItem('openclaw_token')}` }
+                                });
+                                const media = await res.json();
+                                if (media && media.length > 0) {
+                                  const latest = media[0];
+                                  setActiveAudio({ 
+                                    url: `${API_URL}/uploads/${latest.file_path}`, 
+                                    title: item.title, 
+                                    id: item.id 
+                                  });
+                                } else {
+                                  showNotification('warning', "Không tìm thấy tệp âm thanh cho bản tin này.");
+                                }
+                              } catch (err) {
+                                showNotification('error', "Lỗi khi tải tệp âm thanh.");
+                              }
+                            }}
+                          >
+                            <Play size={18} fill="#10b981" />
+                          </button>
                         )}
                         
                         <div className="action-menu-container" style={{ position: 'relative' }}>
@@ -869,7 +874,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                               >
                                 <Mic size={16} /> Chuyển TTS
                               </button>
-                               {(user?.role_name === 'admin' || user?.role_name === 'editor' || user?.role_name === 'commander') && (
+                               {(['admin', 'quản trị viên', 'editor', 'commander', 'quản lý'].includes(user?.role_name?.toLowerCase() || '')) && (
                                 <button 
                                   className="menu-item"
                                   style={{ 
@@ -996,6 +1001,28 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                     </h4>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <button type="button" onClick={() => {
+                        if (!formData.body.trim()) {
+                          alert('Vui lòng soạn nội dung bản tin trước khi dùng AI đọc!');
+                          return;
+                        }
+                        const dummyItem = {
+                          id: -999, // Special ID for editor
+                          title: formData.title || 'Ban-tin-soan-thao',
+                          body: formData.body,
+                          summary: formData.summary,
+                          author_id: user?.id,
+                          tags: [],
+                          status: 'draft',
+                          created_at: new Date().toISOString()
+                        } as any;
+                        setTargetTTSItem(dummyItem);
+                        setIsTTSModalOpen(true);
+                      }} className="glass-btn-sidebar hover-scale" style={{ background: 'rgba(234, 179, 8, 0.1)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.2)' }}>
+                        <Volume2 size={16} />
+                        <span style={{ fontWeight: 700 }}>Tạo Audio (AI TTS)</span>
+                      </button>
+
                       <input type="file" ref={audioInputRef} style={{ display: 'none' }} accept=".mp3,.wav" onChange={handleUploadAudio} />
                       <button type="button" onClick={() => audioInputRef.current?.click()} disabled={uploadingAudio} className="glass-btn-sidebar" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
                         <Mic size={16} />
@@ -1036,47 +1063,17 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                   <section>
                     <h4 style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Sparkles size={14} />
-                      AI Assistant
+                      Trợ lý Chuẩn hóa Kịch bản
                     </h4>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                      <button type="button" onClick={() => setIsAIAssistantOpen(!isAIAssistantOpen)} className="glass-btn-sidebar" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}>
+                      <button type="button" onClick={handleFormatScript} disabled={isAnalyzing || !formData.body.trim()} className="glass-btn-sidebar hover-scale" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.2)' }}>
                         <Sparkles size={16} />
-                        <span>Viết kịch bản AI</span>
+                        <span style={{ fontWeight: 600 }}>{isAnalyzing ? 'Đang xử lý...' : 'Dọn dẹp & Chuẩn hóa'}</span>
                       </button>
                       <button type="button" onClick={handleQuickSummarize} disabled={isAnalyzing || !formData.body} className="glass-btn-sidebar" style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8' }}>
                         <FileText size={16} />
-                        <span>{isAnalyzing ? '...' : 'Tóm tắt nội dung'}</span>
+                        <span>{isAnalyzing ? 'Đang tóm tắt...' : 'Tóm tắt nội dung'}</span>
                       </button>
-                      <button type="button" onClick={handleAnalyzePolicy} disabled={isAnalyzing || !formData.body} className="glass-btn-sidebar" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#f87171' }}>
-                        <AlertTriangle size={16} />
-                        <span>Kiểm tra nội quy</span>
-                      </button>
-
-                      {aiAnalysis && (
-                        <div style={{ marginTop: '10px', padding: '10px', borderRadius: '8px', background: aiAnalysis.isSensitive ? 'rgba(239, 68, 68, 0.1)' : 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ fontSize: '0.75rem', color: aiAnalysis.isSensitive ? '#ef4444' : '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {aiAnalysis.isSensitive ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
-                            <span style={{ fontWeight: 600 }}>Cảnh báo AI:</span>
-                          </div>
-                          <p style={{ fontSize: '0.7rem', color: '#94a3b8', margin: '5px 0 0 0', lineHeight: '1.4' }}>{aiAnalysis.feedback}</p>
-                          {aiAnalysis.isSensitive && (
-                            <button
-                              type="button"
-                              onClick={() => setShowHighlightPreview(!showHighlightPreview)}
-                              style={{
-                                marginTop: '10px', width: '100%', padding: '8px', borderRadius: '8px',
-                                background: showHighlightPreview ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)',
-                                color: showHighlightPreview ? '#f87171' : '#94a3b8',
-                                fontSize: '0.7rem', fontWeight: 800, border: '1px solid rgba(255,255,255,0.1)', cursor: 'pointer',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
-                              }}
-                            >
-                              <Search size={14} />
-                              {showHighlightPreview ? 'QUAY LẠI SOẠN THẢO' : 'XEM VỊ TRÍ LỖI'}
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </section>
 
@@ -1086,11 +1083,11 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                       <Plus size={14} />
                       Công cụ khác
                     </h4>
-                    <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".docx" onChange={handleImportWord} />
-                    <button type="button" onClick={() => fileInputRef.current?.click()} disabled={importingWord} className="glass-btn-sidebar" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa' }}>
+                    <label htmlFor="import-doc-input" className={`glass-btn-sidebar ${importingWord ? 'opacity-50 pointer-events-none' : 'hover-scale'}`} style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                       <FileText size={16} />
-                      <span>{importingWord ? 'Đang nhập...' : 'Dẫn file Word'}</span>
-                    </button>
+                      <span style={{ fontWeight: 600 }}>{importingWord ? 'Đang nhập...' : 'Dẫn file Word'}</span>
+                    </label>
+                    <input id="import-doc-input" type="file" style={{ display: 'none' }} accept=".docx" onChange={handleImportWord} disabled={importingWord} />
                   </section>
 
                   {/* Settings & Status Section - MOVED HERE */}
@@ -1152,7 +1149,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                   <div style={{ maxWidth: '850px', margin: '0 auto' }}>
                     <div style={{ marginBottom: '2rem' }}>
                       <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tiêu đề bản tin</label>
-                      <input type="text" required placeholder="Nhập tiêu đề hấp dẫn..." className="glass-input-premium" style={{ width: '100%', fontSize: '1.25rem', padding: '14px 18px', fontWeight: 700 }} value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
+                      <input type="text" required={!uploadedAudio && !editingItem?.has_audio} placeholder="Nhập tiêu đề hấp dẫn..." className="glass-input-premium" style={{ width: '100%', fontSize: '1.25rem', padding: '14px 18px', fontWeight: 700 }} value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} />
                     </div>
 
                     <div style={{ marginBottom: '2rem' }}>
@@ -1163,46 +1160,8 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                     <div style={{ marginBottom: '2rem' }}>
                       <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 800, marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Nội dung chi tiết</label>
 
-                      {isAIAssistantOpen && (
-                        <div className="ai-assistant-panel">
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '0.8rem', color: '#a855f7', fontWeight: 700 }}>AI Đang trợ giúp viết kịch bản...</span>
-                            <button type="button" onClick={() => setIsAIAssistantOpen(false)} className="mini-icon-btn"><X size={14} /></button>
-                          </div>
-                          <textarea
-                            placeholder="Dán thông tin thô hoặc ý tưởng vào đây..."
-                            className="glass-input"
-                            style={{ width: '100%', minHeight: '120px', fontSize: '0.85rem', marginBottom: '12px', background: 'rgba(0,0,0,0.2)' }}
-                            value={rawAIInput}
-                            onChange={(e) => setRawAIInput(e.target.value)}
-                          />
-                          <button type="button" onClick={handleGenerateScript} disabled={generatingScript || !rawAIInput.trim()} className="btn-primary" style={{ width: '100%', background: '#a855f7' }}>
-                            {generatingScript ? 'Đang thực hiện...' : 'Biên tập tự động'}
-                          </button>
-                        </div>
-                      )}
-
                       <div style={{ position: 'relative' }}>
-                        {showHighlightPreview ? (
-                          <div
-                            style={{
-                              width: '100%', minHeight: '400px', padding: '20px', lineHeight: '1.8', fontSize: '1rem',
-                              background: 'rgba(0,0,0,0.3)', borderRadius: '16px', border: '1px solid rgba(239, 68, 68, 0.2)',
-                              color: '#cbd5e1', whiteSpace: 'pre-wrap', overflowY: 'auto'
-                            }}
-                            onClick={() => setShowHighlightPreview(false)}
-                            title="Bấm để quay lại chế độ soạn thảo"
-                          >
-                            {renderHighlightedText()}
-                          </div>
-                        ) : (
-                          <textarea required placeholder="Bắt đầu soạn thảo ở đây..." className="glass-input-premium" style={{ width: '100%', minHeight: '400px', padding: '20px', lineHeight: '1.8', fontSize: '1rem' }} value={formData.body} onChange={(e) => setFormData({ ...formData, body: e.target.value })} />
-                        )}
-                        {aiAnalysis?.isSensitive && !showHighlightPreview && (
-                          <div style={{ position: 'absolute', top: '10px', right: '10px', background: '#ef4444', color: 'white', fontSize: '0.6rem', padding: '2px 8px', borderRadius: '10px', fontWeight: 900, cursor: 'pointer' }} onClick={() => setShowHighlightPreview(true)}>
-                            PHÁT HIỆN LỖI
-                          </div>
-                        )}
+                        <textarea required={!uploadedAudio && !editingItem?.has_audio} placeholder="Bắt đầu soạn thảo ở đây (hoặc dùng tính năng 'Dẫn file Word' ở cột bên trái) ..." className="glass-input-premium" style={{ width: '100%', minHeight: '400px', padding: '20px', lineHeight: '1.8', fontSize: '1rem' }} value={formData.body} onChange={(e) => setFormData({ ...formData, body: e.target.value })} />
                       </div>
                     </div>
                   </div>
@@ -1218,7 +1177,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                 gap: '1.5rem',
                 background: 'rgba(255,255,255,0.02)'
               }}>
-                <button type="button" onClick={() => { setIsModalOpen(false); setAiAnalysis(null); }} className="btn-secondary" style={{ padding: '0.8rem 1.5rem', fontSize: '0.85rem', fontWeight: 600 }}>Hủy bỏ</button>
+                <button type="button" onClick={() => setIsModalOpen(false)} className="btn-secondary" style={{ padding: '0.8rem 1.5rem', fontSize: '0.85rem', fontWeight: 600 }}>Hủy bỏ</button>
                 <button type="submit" className="btn-primary" style={{ padding: '0.8rem 3rem', fontSize: '0.85rem', fontWeight: 800, letterSpacing: '0.5px' }}>{editingItem ? 'CẬP NHẬT BẢN TIN' : 'ĐĂNG BẢN TIN'}</button>
               </div>
             </form>
@@ -1246,59 +1205,63 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
       {/* TTS Advanced Selection Modal */}
       {isTTSModalOpen && targetTTSItem && (
     <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-      <div className="glass-card animate-scale-in" style={{ width: '100%', maxWidth: '450px', padding: '2rem' }}>
-        <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="glass-card animate-scale-in" style={{ width: '100%', maxWidth: '500px', padding: '2rem' }}>
+        <h2 style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
           <Mic color="#10b981" /> Tùy chọn giọng đọc AI
         </h2>
+        <p style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '1.5rem' }}>Lựa chọn các dịch vụ AI chuyển đổi văn bản thành giọng nói</p>
 
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.8rem' }}>Chọn vùng miền & giới tính</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+        {/* Google Gemini Audio */}
+        <div style={{ marginBottom: '1.2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.7rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>✨ Google Gemini</span>
+            <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '4px', color: '#ef4444' }}>GenAI (Mới)</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
             <button
-              className={`voice-opt ${ttsOptions.voice === 'vi-VN-HoaiMyNeural' ? 'active' : ''}`}
-              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'vi-VN-HoaiMyNeural' })}
+              className={`voice-opt ${ttsOptions.voice === 'gemini-Aoede' ? 'active' : ''}`}
+              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'gemini-Aoede' })}
+              title="Aoede — Giọng nữ (Gemini)"
             >
-              Bắc (Nữ)
+              ✨ Aoede (Nữ)
             </button>
             <button
-              className={`voice-opt ${ttsOptions.voice === 'vi-VN-NamMinhNeural' ? 'active' : ''}`}
-              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'vi-VN-NamMinhNeural' })}
+              className={`voice-opt ${ttsOptions.voice === 'gemini-Puck' ? 'active' : ''}`}
+              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'gemini-Puck' })}
+              title="Puck — Giọng nam trầm (Gemini)"
             >
-              Bắc (Nam)
+              ✨ Puck (Nam)
             </button>
             <button
-              className={`voice-opt ${ttsOptions.voice === 'south-female' ? 'active' : ''}`}
-              disabled
-              title="Sắp ra mắt"
-              style={{ opacity: 0.5 }}
+              className={`voice-opt ${ttsOptions.voice === 'gemini-Kore' ? 'active' : ''}`}
+              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'gemini-Kore' })}
+              title="Kore — Giọng nữ trẻ (Gemini)"
             >
-              Nam (Nữ)
-            </button>
-            <button
-              className={`voice-opt ${ttsOptions.voice === 'south-male' ? 'active' : ''}`}
-              disabled
-              title="Sắp ra mắt"
-              style={{ opacity: 0.5 }}
-            >
-              Nam (Nam)
+              ✨ Kore (Nữ)
             </button>
           </div>
         </div>
 
+        {/* Edge TTS Premium */}
         <div style={{ marginBottom: '1.5rem' }}>
-          <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.85rem', marginBottom: '0.8rem' }}>Phong cách giọng đọc</label>
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.7rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>⚡ Microsoft Neural</span>
+            <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '4px', color: '#10b981' }}>Edge TTS</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
             <button
-              className={`voice-opt ${ttsOptions.rate === '+0%' ? 'active' : ''}`}
-              onClick={() => setTtsOptions({ ...ttsOptions, rate: '+0%', pitch: '+0Hz' })}
+              className={`voice-opt ${ttsOptions.voice === 'vi-VN-HoaiMyNeural' ? 'active' : ''}`}
+              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'vi-VN-HoaiMyNeural' })}
+              title="HoaiMy — Giọng nữ Neural Microsoft"
             >
-              Dõng dạc
+              🤖 HoàiMy (Nữ)
             </button>
             <button
-              className={`voice-opt ${ttsOptions.rate === '-10%' ? 'active' : ''}`}
-              onClick={() => setTtsOptions({ ...ttsOptions, rate: '-10%', pitch: '+2Hz' })}
+              className={`voice-opt ${ttsOptions.voice === 'vi-VN-NamMinhNeural' ? 'active' : ''}`}
+              onClick={() => setTtsOptions({ ...ttsOptions, voice: 'vi-VN-NamMinhNeural' })}
+              title="NamMinh — Giọng nam Neural Microsoft"
             >
-              Truyền cảm
+              🤖 NamMinh (Nam)
             </button>
           </div>
         </div>
@@ -1332,7 +1295,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                 }} />
                 <span style={{ position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                   <Volume2 size={16} className="animate-pulse" />
-                  Đang xử lý: {ttsProgress}%
+                  {ttsStatus}: {Math.round(ttsProgress)}%
                 </span>
               </>
             ) : 'Bắt đầu chuyển đổi'}
@@ -1342,7 +1305,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
         <style>{`
           .voice-opt {
             background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
-            color: #94a3b8; padding: 10px; borderRadius: 8px; font-size: 0.85rem;
+            color: #94a3b8; padding: 10px 8px; border-radius: 8px; font-size: 0.82rem;
             cursor: pointer; transition: all 0.2s;
             flex: 1; text-align: center;
           }
@@ -1469,7 +1432,7 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
                 className="glass-input"
                 style={{ paddingLeft: '40px', width: '100%' }}
                 onChange={(e) => {
-                  const val = e.target.value.toLowerCase()
+                  // val = e.target.value.toLowerCase()
                   // Search logic is handled by being able to see filenames
                 }}
               />
@@ -1553,7 +1516,72 @@ export default function ContentManagement({ user, onLogout }: ContentManagementP
           outline: none; transition: border-color 0.2s;
         }
         .glass-input:focus { border-color: #6366f1; background: rgba(255,255,255,0.05); }
+        @keyframes slideUp { from { transform: translate(-50%, 100%); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
       `}</style>
+
+      {/* Global Sticky Player */}
+      {activeAudio && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '90%',
+          maxWidth: '600px',
+          background: 'rgba(15, 23, 42, 0.9)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '20px',
+          padding: '12px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '16px',
+          boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5)',
+          zIndex: 4000,
+          animation: 'slideUp 0.4s ease-out'
+        }}>
+          <audio 
+            ref={audioRef} 
+            src={activeAudio.url} 
+            autoPlay 
+            onPlay={() => setIsPlaying(true)}
+            onPause={() => setIsPlaying(false)}
+            onEnded={() => setIsPlaying(false)}
+          />
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '12px',
+            background: 'rgba(16, 185, 129, 0.2)', color: '#10b981',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Volume2 size={20} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: 'white', fontWeight: 600, fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {activeAudio.title}
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>Đang phát xem trước...</div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+             <button
+              onClick={() => {
+                if (audioRef.current) {
+                  if (isPlaying) audioRef.current.pause();
+                  else audioRef.current.play();
+                }
+              }}
+              style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: 'white', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}
+            >
+              {isPlaying ? <X size={20} /> : <Play size={20} fill="white" />}
+            </button>
+            <button
+              onClick={() => setActiveAudio(null)}
+              style={{ background: 'rgba(239, 68, 68, 0.1)', border: 'none', color: '#ef4444', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}
+            >
+              <X size={20} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

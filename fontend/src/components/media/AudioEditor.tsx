@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
+import { API_URL } from '../../config'
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js';
 import { Scissors, Merge, Play, Pause, Save, RefreshCw, ListMusic } from 'lucide-react';
+import { useNotification } from '../../components/NotificationProvider';
 
 interface AudioEditorProps {
   fileId: number;
@@ -18,6 +20,7 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
   const [isPlaying, setIsPlaying] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [trimRange, setTrimRange] = useState({ start: 0, end: duration });
+  const { showNotification } = useNotification();
   
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -83,13 +86,11 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
   const fetchMediaFiles = async () => {
     try {
       const token = localStorage.getItem('openclaw_token');
-      // Use the updated endpoint with content_id filter
-      const res = await fetch(`http://${window.location.hostname}:3000/media?content_id=${contentId}`, {
+      const res = await fetch(`${API_URL}/media?content_id=${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       setMediaFiles(Array.isArray(data) ? data : []);
-      // Pre-select current file if it exists in the list
       if (fileId) setSelectedIds([fileId]);
     } catch (err) {
       console.error("Failed to fetch media:", err);
@@ -104,7 +105,7 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
     setIsProcessing(true);
     try {
       const token = localStorage.getItem('openclaw_token');
-      const res = await fetch(`http://${window.location.hostname}:3000/media/trim`, {
+      const res = await fetch(`${API_URL}/media/trim`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -119,16 +120,16 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
       
       if (res.ok) {
         const data = await res.json();
-        alert('Cắt đoạn thành công!');
+        showNotification('success', 'Cắt đoạn thành công!');
         onSuccess(data.fileId);
         onClose();
       } else {
         const err = await res.json();
-        alert(err.error || 'Lỗi khi cắt đoạn');
+        showNotification('error', err.error || 'Lỗi khi cắt đoạn');
       }
     } catch (err) {
       console.error(err);
-      alert('Không thể kết nối máy chủ');
+      showNotification('error', 'Không thể kết nối máy chủ');
     } finally {
       setIsProcessing(false);
     }
@@ -136,13 +137,13 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
 
   const handleMerge = async () => {
     if (selectedIds.length < 2) {
-      alert('Vui lòng chọn ít nhất 2 file để ghép');
+      showNotification('info', 'Vui lòng chọn ít nhất 2 file để ghép');
       return;
     }
     setIsProcessing(true);
     try {
       const token = localStorage.getItem('openclaw_token');
-      const res = await fetch(`http://${window.location.hostname}:3000/media/merge`, {
+      const res = await fetch(`${API_URL}/media/merge`, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -156,16 +157,16 @@ export default function AudioEditor({ fileId, fileName, fileUrl, duration, conte
       
       if (res.ok) {
         const data = await res.json();
-        alert('Ghép file thành công!');
+        showNotification('success', 'Ghép file thành công!');
         onSuccess(data.fileId);
         onClose();
       } else {
         const err = await res.json();
-        alert(err.error || 'Lỗi khi ghép file');
+        showNotification('error', err.error || 'Lỗi khi ghép file');
       }
     } catch (err) {
       console.error(err);
-      alert('Không thể kết nối máy chủ');
+      showNotification('error', 'Không thể kết nối máy chủ');
     } finally {
       setIsProcessing(false);
     }

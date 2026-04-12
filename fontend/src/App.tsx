@@ -5,6 +5,9 @@ import Login from './pages/login/Login'
 import Dashboard from './pages/dashboard/Dashboard'
 import Register from './pages/register/register'
 import BroadcastTerminal from './pages/terminal/BroadcastTerminal'
+import { NotificationProvider } from './components/NotificationProvider'
+
+import { API_URL } from './config'
 
 function App() {
   const [user, setUser] = useState<any>(null)
@@ -15,12 +18,12 @@ function App() {
       const token = localStorage.getItem('openclaw_token')
       if (token) {
         try {
-          const res = await fetch(`http://${window.location.hostname}:3000/auth/verify`, {
+          const res = await fetch(`${API_URL}/auth/verify`, {
             headers: { 'Authorization': `Bearer ${token}` }
           })
           
           if (res.ok) {
-            const data = await (await res).json()
+            const data = await res.json()
             setUser(data.user)
             localStorage.setItem('openclaw_user', JSON.stringify(data.user))
             console.log('App: Token verified successfully', data.user)
@@ -75,19 +78,21 @@ function App() {
   }
 
   return (
-    <Routes>
-      <Route path="/register" element={<Register onLoginSuccess={handleLoginSuccess} />} />
-      <Route
-        path="/login"
-        element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/dashboard" />}
-      />
-      <Route
-        path="/dashboard"
-        element={user ? <Dashboard user={user} onLogout={() => setUser(null)} /> : <Navigate to="/login" />}
-      />
-      <Route path="/terminal" element={<BroadcastTerminal />} />
-      <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
-    </Routes>
+    <NotificationProvider>
+      <Routes>
+        <Route path="/register" element={<Register onLoginSuccess={handleLoginSuccess} />} />
+        <Route
+          path="/login"
+          element={!user ? <Login onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/dashboard" />}
+        />
+        <Route
+          path="/dashboard"
+          element={user ? <Dashboard user={user} onLogout={() => setUser(null)} /> : <Navigate to="/login" />}
+        />
+        <Route path="/terminal" element={<BroadcastTerminal />} />
+        <Route path="*" element={<Navigate to={user ? "/dashboard" : "/login"} />} />
+      </Routes>
+    </NotificationProvider>
   )
 }
 

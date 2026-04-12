@@ -3,24 +3,18 @@ import * as XLSX from 'xlsx';
 
 export default async function reportRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
-  // 1. Get detailed broadcast history for devices
+  // 1. Get detailed broadcast history for devices (Scoped)
   fastify.get('/history', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const { startDate, endDate, channelId, unitId, status, deviceId } = request.query as any;
+    const user = request.user as any;
     const client = await fastify.pg.connect();
     
     try {
       let query = `
         SELECT 
-          l.id,
-          l.start_time,
-          l.end_time,
-          l.status,
-          l.error_message,
-          d.name as device_name,
-          d.ip_address,
-          u.name as unit_name,
-          c.name as channel_name,
-          ci.title as content_title,
+          l.id, l.start_time, l.end_time, l.status, l.error_message,
+          d.name as device_name, d.ip_address, u.name as unit_name,
+          c.name as channel_name, ci.title as content_title,
           EXTRACT(EPOCH FROM (l.end_time - l.start_time)) as duration
         FROM device_broadcast_logs l
         JOIN devices d ON l.device_id = d.id
@@ -32,52 +26,59 @@ export default async function reportRoutes(fastify: FastifyInstance, options: Fa
       
       const values: any[] = [];
       let paramIdx = 1;
+
+      // Scoped Admin Logic
+      if (!(user.role_name === 'admin' && user.unit_id === 1)) {
+        const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+        const allowedUnitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        
+        if (unitId && unitId !== 'all') {
+          const target = parseInt(unitId);
+          if (!allowedUnitIds.includes(target)) return reply.code(403).send({ error: 'Bạn không có quyền xem báo cáo của đơn vị này.' });
+          query += ` AND d.unit_id = $${paramIdx++}`;
+          values.push(target);
+        } else {
+          query += ` AND d.unit_id = ANY($${paramIdx++})`;
+          values.push(allowedUnitIds);
+        }
+      } else if (unitId && unitId !== 'all') {
+        query += ` AND d.unit_id = $${paramIdx++}`;
+        values.push(unitId);
+      }
       
       if (startDate) {
         query += ` AND l.start_time >= $${paramIdx++}`;
         values.push(startDate);
       }
-      
       if (endDate) {
         query += ` AND l.start_time <= $${paramIdx++}`;
         values.push(endDate + ' 23:59:59');
       }
-      
       if (channelId && channelId !== 'all') {
         query += ` AND l.channel_id = $${paramIdx++}`;
         values.push(channelId);
       }
-
-      if (unitId && unitId !== 'all') {
-        query += ` AND d.unit_id = $${paramIdx++}`;
-        values.push(unitId);
-      }
-      
       if (status && status !== 'all') {
         query += ` AND l.status = $${paramIdx++}`;
         values.push(status);
       }
-
       if (deviceId) {
         query += ` AND l.device_id = $${paramIdx++}`;
         values.push(deviceId);
       }
       
       query += ` ORDER BY l.start_time DESC LIMIT 500`;
-      
       const res = await client.query(query, values);
       return res.rows;
-    } catch (err: any) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Failed to fetch device broadcast history' });
     } finally {
       client.release();
     }
   });
 
-  // 2. Export History to Excel
+  // 2. Export History to Excel (Scoped)
   fastify.get('/export', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     const { startDate, endDate, channelId, unitId, status } = request.query as any;
+    const user = request.user as any;
     const client = await fastify.pg.connect();
     
     try {
@@ -101,34 +102,42 @@ export default async function reportRoutes(fastify: FastifyInstance, options: Fa
       
       const values: any[] = [];
       let paramIdx = 1;
+
+      if (!(user.role_name === 'admin' && user.unit_id === 1)) {
+        const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+        const allowedUnitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        
+        if (unitId && unitId !== 'all') {
+          const target = parseInt(unitId);
+          if (!allowedUnitIds.includes(target)) return reply.code(403).send({ error: 'Bạn không có quyền xuất báo cáo cho đơn vị này.' });
+          query += ` AND d.unit_id = $${paramIdx++}`;
+          values.push(target);
+        } else {
+          query += ` AND d.unit_id = ANY($${paramIdx++})`;
+          values.push(allowedUnitIds);
+        }
+      } else if (unitId && unitId !== 'all') {
+        query += ` AND d.unit_id = $${paramIdx++}`;
+        values.push(unitId);
+      }
       
       if (startDate) {
         query += ` AND l.start_time >= $${paramIdx++}`;
         values.push(startDate);
       }
-      
       if (endDate) {
         query += ` AND l.start_time <= $${paramIdx++}`;
         values.push(endDate + ' 23:59:59');
       }
-      
       if (channelId && channelId !== 'all') {
         query += ` AND l.channel_id = $${paramIdx++}`;
         values.push(channelId);
       }
-
-      if (unitId && unitId !== 'all') {
-        query += ` AND d.unit_id = $${paramIdx++}`;
-        values.push(unitId);
-      }
       
       query += ` ORDER BY l.start_time DESC`;
-      
       const res = await client.query(query, values);
-      const data = res.rows;
 
-      // Format dates for Excel
-      const formattedData = data.map(row => ({
+      const formattedData = res.rows.map(row => ({
         ...row,
         "Thời gian bắt đầu": row["Thời gian bắt đầu"] ? new Date(row["Thời gian bắt đầu"]).toLocaleString('vi-VN') : '',
         "Thời gian kết thúc": row["Thời gian kết thúc"] ? new Date(row["Thời gian kết thúc"]).toLocaleString('vi-VN') : '',
@@ -138,7 +147,6 @@ export default async function reportRoutes(fastify: FastifyInstance, options: Fa
       const ws = XLSX.utils.json_to_sheet(formattedData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Lich_su_phat_thanh");
-
       const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 
       reply
@@ -146,9 +154,6 @@ export default async function reportRoutes(fastify: FastifyInstance, options: Fa
         .header('Content-Disposition', `attachment; filename="Bao_cao_phat_thanh_${new Date().getTime()}.xlsx"`)
         .send(buf);
 
-    } catch (err: any) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Failed to generate history export' });
     } finally {
       client.release();
     }

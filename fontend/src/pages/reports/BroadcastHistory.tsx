@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../../config'
 import { 
   Download, 
   Calendar as CalendarIcon, 
@@ -36,8 +37,8 @@ const BroadcastHistory = ({ onLogout }: { onLogout?: () => void }) => {
   const fetchMetadata = async () => {
     try {
       const [chRes, uRes] = await Promise.all([
-        fetch(`http://${window.location.hostname}:3000/channels`, { headers: getHeaders() }),
-        fetch(`http://${window.location.hostname}:3000/units`, { headers: getHeaders() })
+        fetch(`${API_URL}/channels`, { headers: getHeaders() }),
+        fetch(`${API_URL}/units`, { headers: getHeaders() })
       ]);
       const chData = await chRes.json();
       const uData = await uRes.json();
@@ -52,7 +53,7 @@ const BroadcastHistory = ({ onLogout }: { onLogout?: () => void }) => {
     setLoading(true);
     try {
       const queryParams = new URLSearchParams(filters).toString();
-      const res = await fetch(`http://${window.location.hostname}:3000/reports/history?${queryParams}`, {
+      const res = await fetch(`${API_URL}/reports/history?${queryParams}`, {
         headers: getHeaders()
       });
       if (res.status === 401) {
@@ -71,7 +72,7 @@ const BroadcastHistory = ({ onLogout }: { onLogout?: () => void }) => {
   const handleExport = async () => {
     try {
       const queryParams = new URLSearchParams(filters).toString();
-      const res = await fetch(`http://${window.location.hostname}:3000/reports/export?${queryParams}`, {
+      const res = await fetch(`${API_URL}/reports/export?${queryParams}`, {
         headers: getHeaders()
       });
       const blob = await res.blob();

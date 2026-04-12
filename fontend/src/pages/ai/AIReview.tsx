@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../../config'
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Check,
@@ -59,7 +60,7 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
     setLoading(true);
     try {
       const [penRes] = await Promise.all([
-        fetch(`http://${window.location.hostname}:3000/content/pending`, { headers: getHeaders() })
+        fetch(`${API_URL}/content/pending`, { headers: getHeaders() })
       ]);
       
       if (penRes.status === 401) {
@@ -91,8 +92,8 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
     setApprovingId(id);
     try {
       const token = localStorage.getItem('openclaw_token');
-      const res = await fetch(`http://${window.location.hostname}:3000/content/${id}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_URL}/content/${id}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -103,9 +104,13 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
         setPendingNews(prev => prev.filter(n => n.id !== id));
         setIsReviewModalOpen(false);
         setSelectedNews(null);
+      } else {
+        const errData = await res.json();
+        alert(`Lỗi phê duyệt: ${errData.message || errData.error || 'Vui lòng thử lại sau.'}`);
       }
     } catch (error) {
       console.error('Error approving news:', error);
+      alert('Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại đường truyền.');
     } finally {
       setApprovingId(null);
     }
@@ -116,8 +121,8 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
     setRejectingId(id);
     try {
       const token = localStorage.getItem('openclaw_token');
-      const res = await fetch(`http://${window.location.hostname}:3000/content/${id}`, {
-        method: 'PUT',
+      const res = await fetch(`${API_URL}/content/${id}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
@@ -128,9 +133,13 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
         setPendingNews(prev => prev.filter(n => n.id !== id));
         setIsReviewModalOpen(false);
         setSelectedNews(null);
+      } else {
+        const errData = await res.json();
+        alert(`Lỗi từ chối: ${errData.message || errData.error || 'Vui lòng thử lại sau.'}`);
       }
     } catch (error) {
       console.error('Error rejecting news:', error);
+      alert('Không thể kết nối đến máy chủ. Vui lòng kiểm tra lại đường truyền.');
     } finally {
       setRejectingId(null);
     }
@@ -139,7 +148,7 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
   const handleReCheck = async (id: number) => {
     try {
       const token = localStorage.getItem('openclaw_token');
-      const res = await fetch(`http://${window.location.hostname}:3000/ai/analyze-policy`, {
+      const res = await fetch(`${API_URL}/ai/analyze-policy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ text: selectedNews?.body })
@@ -314,7 +323,7 @@ export default function AIReview({ user: _user, onLogout }: AIReviewProps) {
                       <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: '#10b981', textTransform: 'uppercase' }}>Nghe thử âm thanh:</h4>
                     </div>
                     <audio controls style={{ width: '100%', height: '40px' }}>
-                      <source src={`http://${window.location.hostname}:3000${selectedNews.audio_path.startsWith('/') ? '' : '/'}${selectedNews.audio_path}`} type="audio/mpeg" />
+                      <source src={`${API_URL}${selectedNews.audio_path.startsWith('/') ? '' : '/'}${selectedNews.audio_path}`} type="audio/mpeg" />
                       Trình duyệt của bạn không hỗ trợ phát âm thanh.
                     </audio>
                   </div>

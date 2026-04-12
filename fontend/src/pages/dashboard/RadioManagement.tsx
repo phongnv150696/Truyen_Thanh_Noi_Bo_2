@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import { API_URL } from '../../config'
 import { 
   Radio, 
   Play, 
@@ -39,7 +40,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
 
   const fetchRadios = async () => {
     try {
-      const response = await axios.get(`http://${window.location.hostname}:3000/radios`, {
+      const response = await axios.get(`${API_URL}/radios`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
       setRadios(response.data);
@@ -56,7 +57,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
 
   const fetchChannels = async () => {
     try {
-      const response = await axios.get(`http://${window.location.hostname}:3000/channels`, {
+      const response = await axios.get(`${API_URL}/channels`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
       setChannels(response.data);
@@ -83,7 +84,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
   const handlePlay = async (id: number) => {
     try {
       setPlayingId(id);
-      await axios.post(`http://${window.location.hostname}:3000/radios/${id}/play`, {}, {
+      await axios.post(`${API_URL}/radios/${id}/play`, {}, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
     } catch (err) {
@@ -95,7 +96,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
 
   const handleStop = async () => {
     try {
-      await axios.post(`http://${window.location.hostname}:3000/radios/stop`, {}, {
+      await axios.post(`${API_URL}/radios/stop`, {}, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
       setPlayingId(null);
@@ -107,7 +108,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
   const handleAddRadio = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post(`http://${window.location.hostname}:3000/radios`, newRadio, {
+      await axios.post(`${API_URL}/radios`, newRadio, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
       setShowAddModal(false);
@@ -121,7 +122,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
   const handleDelete = async (id: number) => {
     if (!window.confirm('Bạn có chắc chắn muốn xóa đài này?')) return;
     try {
-      await axios.delete(`http://${window.location.hostname}:3000/radios/${id}`, {
+      await axios.delete(`${API_URL}/radios/${id}`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('openclaw_token')}` }
       });
       fetchRadios();
@@ -471,7 +472,7 @@ const RadioManagement = ({ onLogout }: { onLogout?: () => void }) => {
                           }
                         }
                         
-                        const res = await axios.post(`http://${window.location.hostname}:3000/schedules`, {
+                        const res = await axios.post(`${API_URL}/schedules`, {
                           ...payload,
                           radio_id: schedulingRadio.id,
                           content_id: null

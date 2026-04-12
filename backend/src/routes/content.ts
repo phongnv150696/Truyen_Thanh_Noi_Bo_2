@@ -6,37 +6,35 @@ import { AIAgentService } from '../services/ai-agent.js';
 export default async function contentRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   const aiService = new AIAgentService(fastify);
   
-  // 0. Import Word Content
-  fastify.post('/import-word', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
-    const data = await request.file();
-    if (!data) {
-      return reply.code(400).send({ error: 'Không tìm thấy tệp tải lên' });
-    }
-
-    if (!data.filename.endsWith('.docx')) {
-      return reply.code(400).send({ error: 'Vui lòng chỉ tải lên tệp định dạng .docx' });
-    }
-
-    try {
-      const buffer = await data.toBuffer();
-      const result = await mammoth.extractRawText({ buffer });
-      
-      return { 
-        text: result.value,
-        title: data.filename.replace('.docx', '')
-      };
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Lỗi khi đọc tệp Word' });
-    }
-  });
-  
-  // 1. Get all content items
-  fastify.get('/', async (request: any, reply: any) => {
+  // 1. Get all content items (Strictly Scoped by Entity Unit)
+  fastify.get('/', { preHandler: [fastify.authenticate] }, async (request: any, reply: any) => {
     const { status } = request.query;
+    const user = request.user;
     const client = await fastify.pg.connect();
+    
     try {
-      let query = `
+      let unitFilter = '';
+      const params: any[] = [];
+      let paramIdx = 1;
+
+      // Only the unique System Owner (ID 1) bypasses unit scoping completely
+      if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+        const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+        const unitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        
+        // Add Unit 1 (Root) to visibility for all users to see Global News
+        if (!unitIds.includes(1)) unitIds.push(1);
+
+        unitFilter = `WHERE c.unit_id = ANY($${paramIdx++})`;
+        params.push(unitIds);
+      }
+
+      if (status) {
+        unitFilter += unitFilter ? ` AND c.status = $${paramIdx++}` : ` WHERE c.status = $${paramIdx++}`;
+        params.push(status);
+      }
+
+      const query = `
         SELECT 
           c.id, c.title, c.summary, c.body, c.status, c.tags, c.author_id, c.created_at,
           u.full_name as author_name,
@@ -44,13 +42,9 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
           EXISTS(SELECT 1 FROM media_files m WHERE m.content_id = c.id) as has_audio
         FROM content_items c 
         LEFT JOIN users u ON c.author_id = u.id
+        ${unitFilter}
+        ORDER BY c.created_at DESC
       `;
-      const params = [];
-      if (status) {
-        query += ` WHERE c.status = $1`;
-        params.push(status);
-      }
-      query += ` ORDER BY c.created_at DESC`;
       const { rows } = await client.query(query, params);
       return rows;
     } finally {
@@ -58,9 +52,25 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
     }
   });
 
-  fastify.get('/pending', async (request: any, reply: any) => {
+  // 1.1 Get pending content items (Strictly Scoped)
+  fastify.get('/pending', { preHandler: [fastify.authenticate] }, async (request: any, reply: any) => {
+    const user = request.user;
     const client = await fastify.pg.connect();
     try {
+      let unitFilter = "WHERE c.status = 'pending_review'";
+      const params: any[] = [];
+
+      if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+        const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+        const unitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        
+        // Add Unit 1 (Root) to visibility for all users to see Global News
+        if (!unitIds.includes(1)) unitIds.push(1);
+
+        unitFilter += ' AND c.unit_id = ANY($1)';
+        params.push(unitIds);
+      }
+
       const query = `
         SELECT 
           c.*, 
@@ -70,219 +80,117 @@ export default async function contentRoutes(fastify: FastifyInstance, options: F
           (SELECT file_path FROM media_files WHERE content_id = c.id LIMIT 1) as audio_path
         FROM content_items c
         LEFT JOIN users u ON c.author_id = u.id
-        LEFT JOIN units un ON u.unit_id = un.id
-        WHERE c.status = 'pending_review'
+        LEFT JOIN units un ON c.unit_id = un.id
+        ${unitFilter}
         ORDER BY c.created_at DESC
       `;
-      const { rows } = await client.query(query);
+      const { rows } = await client.query(query, params);
       return rows;
     } finally {
       client.release();
     }
   });
 
-  // 2. Get single content item
-  fastify.get('/:id', async (request: any, reply: any) => {
-    const { id } = request.params; console.log("[PLAY] Request to play content ID: " + id);
+  // 3. Create content item
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, async (request: any, reply: any) => {
+    const { title, body, summary, tags, status, author_id } = request.body;
+    const user = request.user as any;
     const client = await fastify.pg.connect();
     try {
-      const { rows } = await client.query('SELECT * FROM content_items WHERE id = $1', [id]);
-      if (rows.length === 0) {
-        return reply.status(404).send({ message: 'Content not found' });
-      }
+      const tagsArray = tags || [];
+      const validationResults = await aiService.analyzeContentPolicy(body);
+
+      const { rows } = await client.query(
+        'INSERT INTO content_items (title, body, summary, tags, status, author_id, unit_id, validation_results) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+        [title, body, summary, tagsArray, status || 'pending_review', author_id, user.unit_id, JSON.stringify(validationResults)]
+      );
       return rows[0];
     } finally {
       client.release();
     }
   });
 
-  // 3. Create content item
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
-    const { title, body, summary, tags, status, author_id } = request.body;
-    const client = await fastify.pg.connect();
-    try {
-      const tagsArray = tags || [];
-      const isEmergency = tagsArray.includes('Khẩn');
-      const finalStatus = isEmergency ? 'approved' : (status || 'pending_review');
-
-      // ── Mới: Tự động kiểm thử nội dung qua AI ──
-      const validationResults = await aiService.analyzeContentPolicy(body);
-
-      const { rows } = await client.query(
-        'INSERT INTO content_items (title, body, summary, tags, status, author_id, validation_results) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *',
-        [title, body, summary, tagsArray, finalStatus, author_id, JSON.stringify(validationResults)]
-      );
-      const content = rows[0];
-
-      // EMERGENCY BYPASS LOGGING: If it was an emergency, log it specifically
-      if (isEmergency) {
-        try {
-          await client.query(
-            'INSERT INTO audit_logs (user_id, action, target_table, details) VALUES ($1, $2, $3, $4)',
-            [author_id, 'EMERGENCY_BYPASS', 'content_items', JSON.stringify({ 
-              reason: 'Tag Khẩn detected', 
-              content_id: content.id, 
-              title: content.title 
-            })]
-          );
-        } catch (logErr) {
-          fastify.log.error(logErr, 'Failed to log emergency bypass');
-        }
-      }
-      
-      // Notify when new content is pending review (wrapped in try-catch to avoid breaking main flow)
-      if (content.status === 'pending_review') {
-        try {
-          const userIdResult = await client.query(`
-            SELECT u.id FROM users u 
-            JOIN roles r ON u.role_id = r.id 
-            WHERE r.name = $1 LIMIT 1
-          `, ['admin']);
-          const adminId = userIdResult.rows[0]?.id || null;
-
-          await client.query(
-            `INSERT INTO notifications (user_id, title, message, type, link, sender_name, priority) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [adminId, 'Bản tin mới chờ duyệt', 'Bạn có 1 bản tin mới chờ duyệt.', 'info', 'ai', 'Hệ thống Content', 'medium']
-          );
-        } catch (notifyErr) {
-          fastify.log.error({ err: notifyErr }, 'Failed to send notification');
-        }
-      }
-
-      return content;
-    } finally {
-      client.release();
-    }
-  });
-
-  // 4. Update content item
-  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
+  // 4. Update content item (Scoped)
+  const updateHandler = async (request: any, reply: any) => {
     const { id } = request.params;
-    const { title, body, summary, tags, status, comments } = request.body;
+    const { title, body, summary, tags, status } = request.body;
+    const user = request.user as any;
     const client = await fastify.pg.connect();
     try {
-      // ── Mới: Tự động kiểm thử lại khi cập nhật ──
-      const validationResults = body ? await aiService.analyzeContentPolicy(body) : null;
+        if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+            const existing = await client.query('SELECT unit_id FROM content_items WHERE id = $1', [id]);
+            if (existing.rowCount === 0) return reply.code(404).send({ error: 'Content not found' });
+            
+            const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+            const unitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+            if (!unitIds.includes(existing.rows[0].unit_id)) {
+                return reply.code(403).send({ error: 'Bạn không có quyền chỉnh sửa nội dung của đơn vị khác.' });
+            }
+        }
 
       const { rows } = await client.query(
         `UPDATE content_items SET 
-          title = COALESCE($1, title), 
-          body = COALESCE($2, body), 
-          summary = COALESCE($3, summary), 
-          tags = COALESCE($4, tags), 
-          status = COALESCE($5, status), 
-          validation_results = COALESCE($6, validation_results),
-          updated_at = CURRENT_TIMESTAMP 
-        WHERE id = $7 RETURNING *`,
-        [title, body, summary, tags, status, validationResults ? JSON.stringify(validationResults) : null, id]
+          title = COALESCE($1, title), body = COALESCE($2, body), 
+          summary = COALESCE($3, summary), tags = COALESCE($4, tags), 
+          status = COALESCE($5, status), updated_at = CURRENT_TIMESTAMP 
+        WHERE id = $6 RETURNING *`,
+        [title, body, summary, tags, status, id]
       );
-      if (rows.length === 0) {
-        return reply.status(404).send({ message: 'Content not found' });
-      }
-
-      const content = rows[0];
-
-      // Record human review if status is being updated to a final state
-      if (status === 'approved' || status === 'rejected') {
-        try {
-          await client.query(
-            'INSERT INTO content_reviews (content_id, reviewer_type, reviewer_id, comments) VALUES ($1, $2, $3, $4)',
-            [id, 'human', request.user.id, comments || '']
-          );
-        } catch (err) {
-          fastify.log.error(err, 'Failed to insert content review record');
-        }
-      }
-
-      return content;
+      return rows[0];
     } finally {
       client.release();
     }
-  });
+  };
 
-  // 5. Delete content item
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander'])] }, async (request: any, reply: any) => {
+  fastify.patch('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, updateHandler);
+  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, updateHandler);
+
+  // 5. Delete content item (Scoped)
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, async (request: any, reply: any) => {
     const { id } = request.params;
+    const user = request.user;
     const client = await fastify.pg.connect();
     try {
-      const { rowCount } = await client.query('DELETE FROM content_items WHERE id = $1', [id]);
-      if (rowCount === 0) {
-        return reply.status(404).send({ message: 'Content not found' });
+      if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+          const existing = await client.query('SELECT unit_id FROM content_items WHERE id = $1', [id]);
+          const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+          const unitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+          if (existing.rowCount === 0 || !unitIds.includes(existing.rows[0].unit_id)) {
+              return reply.code(403).send({ error: 'Bạn không có quyền xóa nội dung của đơn vị khác.' });
+          }
       }
+      await client.query('DELETE FROM content_items WHERE id = $1', [id]);
       return { message: 'Content deleted successfully' };
     } finally {
       client.release();
     }
   });
-
-  // 6. Play content item immediately
-  fastify.post('/:id/play', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor', 'commander', 'commander', 'broadcaster'])] }, async (request: any, reply: any) => {
-    const { id } = request.params;
-    const client = await fastify.pg.connect();
+  // 6. Import Word document (.docx) to raw text
+  fastify.post('/import-word', { preHandler: [fastify.authenticate] }, async (request: any, reply: any) => {
     try {
-      // 1. Check content and audio
-      const contentRes = await client.query(`
-        SELECT c.title, mf.file_path, mf.file_name
-        FROM content_items c
-        JOIN media_files mf ON c.id = mf.content_id
-        WHERE c.id = $1 AND c.status = 'approved'
-      `, [id]);
-      
-      if (contentRes.rowCount === 0) {
-        return reply.code(400).send({ error: 'Bản tin chưa được duyệt hoặc chưa có file âm thanh.' });
-      }
-      
-      const content = contentRes.rows[0];
-      
-      // 2. Get first available channel
-      const channelRes = await client.query("SELECT id, name, mount_point FROM channels WHERE status = 'online' LIMIT 1");
-      if (channelRes.rowCount === 0) {
-        return reply.code(400).send({ error: 'Không có kênh nào đang trực tuyến để phát.' });
-      }
-      const channel = channelRes.rows[0];
-      
-      // 3. Create a temporary schedule
-      const scheduleRes = await client.query(`
-        INSERT INTO broadcast_schedules (channel_id, content_id, scheduled_time, duration, is_active)
-        VALUES ($1, $2, NOW(), '00:10:00', true)
-        RETURNING id
-      `, [channel.id, id]);
-      
-      const scheduleId = scheduleRes.rows[0].id;
-
-      // 4. Trigger broadcast via WebSocket
-      if (fastify.broadcast) {
-        const host = request.headers.host || 'localhost:3000';
-        const protocol = request.protocol || 'http';
-        
-        fastify.broadcast({
-          type: 'broadcast-start',
-          channel_id: channel.id,
-          schedule_id: scheduleId,
-          title: content.title,
-          channel: channel.name,
-          mount_point: channel.mount_point,
-          file_url: content.file_path ? getFullURL(`uploads/${content.file_path}`) : null,
-          user: request.user?.full_name || 'Admin'
-        });
+      const data = await request.file();
+      if (!data) {
+        return reply.code(400).send({ error: 'Không tìm thấy tệp đính kèm.' });
       }
 
-      // 5. Audit Log
-      await client.query(`
-        INSERT INTO audit_logs (user_id, action, target_table, target_id, details)
-        VALUES ($1, 'IMMEDIATE_BROADCAST', 'content_items', $2, $3)
-      `, [request.user.id, id, JSON.stringify({ channel_id: channel.id, schedule_id: scheduleId })]);
+      if (!data.filename.toLowerCase().endsWith('.docx')) {
+        return reply.code(400).send({ error: 'Chỉ hỗ trợ tệp định dạng .docx' });
+      }
+
+      const buffer = await data.toBuffer();
+      
+      const result = await mammoth.extractRawText({ buffer });
+      const text = result.value;
+
+      let title = data.filename.replace(/\.docx$/i, '');
       
       return { 
-        message: 'Đã bắt đầu phát bản tin ngay lập tức.',
-        channel_name: channel.name
+        title, 
+        text 
       };
-    } catch (err: any) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Lỗi hệ thống khi kích hoạt phát sóng.' });
-    } finally {
-      client.release();
+    } catch (err) {
+      request.log.error(err);
+      return reply.code(500).send({ error: 'Lỗi trong quá trình trích xuất nội dung từ tệp Word.' });
     }
   });
 }

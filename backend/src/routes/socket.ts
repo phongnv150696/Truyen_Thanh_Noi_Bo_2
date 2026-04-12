@@ -138,23 +138,25 @@ async function socketRoutes(fastify: FastifyInstance) {
 
           const targetSockets = allClients
             .filter(([socket, metadata]) => {
-              // Only send to identified hardware devices
-              if (!metadata.channel_id) {
-                fs.appendFileSync('./debug_audio.log', `[${new Date().toISOString()}] [BROADCAST] Skipping Device ${metadata.device_id}: No channel_id\n`);
-                return false;
-              }
-              if (metadata.isBrowser) {
-                return false; // Silently skip browsers
-              }
+              const deviceChannelId = metadata.channel_id; // Could be undefined, 0, or numeric
               
-              // Wildcard or channel match
-              const channelMatch = targetChannelId === undefined || 
-                                  targetChannelId === null || 
-                                  targetChannelId === 0 || 
-                                  targetChannelId === '0' ||
-                                  String(metadata.channel_id) === String(targetChannelId);
+              // 1. Wildcard match: targetChannelId 0 means broadcast to EVERYONE
+              const isGlobalBroadcast = targetChannelId === undefined || 
+                                       targetChannelId === null || 
+                                       targetChannelId === 0 || 
+                                       targetChannelId === '0';
+
+              // 2. Client is a monitor: metadata.channel_id 0 means this client monitors EVERYTHING
+              const isGlobalMonitor = deviceChannelId === 0 || deviceChannelId === '0';
+
+              // 3. Channel match: Explicit match between metadata and target
+              const isSpecificMatch = deviceChannelId != null && String(deviceChannelId) === String(targetChannelId);
+
+              // 4. Default Allow: If device haven't identified yet but it's a hardware device, 
+              // we allow it to receive the stream if it's a global broadcast.
+              const channelMatch = isGlobalBroadcast || isGlobalMonitor || isSpecificMatch;
               
-              fs.appendFileSync('./debug_audio.log', `[${new Date().toISOString()}] [BROADCAST] Checking Device ${metadata.device_id}, Chan=${metadata.channel_id}, Target=${targetChannelId}, Match=${channelMatch}\n`);
+              fs.appendFileSync('./debug_audio.log', `[${new Date().toISOString()}] [BROADCAST] Sending to Device ${metadata.device_id || 'unk'}, Chan=${deviceChannelId || 'none'}, Target=${targetChannelId || 'global'}, Match=${channelMatch}\n`);
               return channelMatch;
             })
             .map(([socket, metadata]) => ({
@@ -188,6 +190,8 @@ async function socketRoutes(fastify: FastifyInstance) {
             let shouldSend = false;
             if (targetChannelId === undefined || targetChannelId === null || targetChannelId === 0 || targetChannelId === '0') {
               shouldSend = true;
+            } else if (metadata.channel_id === 0 || metadata.channel_id === '0') {
+              shouldSend = true;
             } else if (metadata.channel_id != null && String(metadata.channel_id) === String(targetChannelId)) {
               shouldSend = true;
             }
@@ -215,7 +219,11 @@ async function socketRoutes(fastify: FastifyInstance) {
       return;
     }
 
-    clients.set(socket, {});
+    // Default to undefined channel but assume xiaozhi-v3 protocol for hardware
+    clients.set(socket, { 
+      channel_id: undefined,
+      protocol: 'xiaozhi-v3' // Default for new hardware connections
+    });
 
     socket.on('message', async (message: any, isBinary: boolean) => {
       try {
@@ -271,16 +279,18 @@ async function socketRoutes(fastify: FastifyInstance) {
           
           if (!isNaN(channelId)) {
             // Check if this is a browser terminal/dashboard
-            const isBrowser = (data.device_name && (data.device_name.includes('Browser') || data.device_name.includes('Dashboard'))) || 
+            const isBrowser = data.isBrowser || (data.device_name && (data.device_name.includes('Browser') || data.device_name.includes('Dashboard'))) || 
                               (data.device_id === 999);
 
             clients.set(socket, { 
               channel_id: channelId,
               device_id: !isNaN(deviceId) ? deviceId : undefined,
-              isBrowser: !!isBrowser
+              isBrowser: !!isBrowser,
+              protocol: isBrowser ? undefined : 'xiaozhi-v3', // Preserve hardware protocol
+              identifiedAt: new Date()
             });
             
-            fastify.log.info(`[SOCKET] Identified Client: Device ${deviceId}, Channel ${channelId} ${isBrowser ? '(Browser)' : ''}`);
+            fastify.log.info(`[SOCKET] Identified Client: ${isBrowser ? 'Browser' : 'Device'} on channel ${channelId}`);
             fs.appendFileSync('./debug_audio.log', `[${new Date().toISOString()}] [SOCKET] Identify - Device: ${deviceId}, Channel: ${channelId}, IsBrowser: ${isBrowser}\n`);
             
             // Set new channel to online

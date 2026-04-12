@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react'
+import { API_URL } from '../../config'
 import { Link, useNavigate } from 'react-router-dom'
-import { User, Lock, Mail, Radio, Loader2, Award, Briefcase, MapPin } from 'lucide-react'
+import { User, Lock, Mail, Radio, Loader2, Award, Briefcase } from 'lucide-react'
 import axios from 'axios'
 import '../login/loginCSS.css'
 
-const API_BASE_URL = `http://${window.location.hostname}:3000`;
+const API_BASE_URL = API_URL;
+
+const RANK_OPTIONS = [
+  'Thiếu úy', 'Trung úy', 'Thượng úy', 'Đại úy',
+  'Thiếu tá', 'Trung tá', 'Thượng tá', 'Đại tá'
+];
 
 export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
     const [formData, setFormData] = useState({
@@ -14,24 +20,15 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
         full_name: '',
         rank: '',
         position: '',
+        phone: '',
+        identity_card: '',
+        home_address: '',
+        unit_address: '',
         unit_id: ''
     })
-    const [units, setUnits] = useState<{id: number, name: string}[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const navigate = useNavigate()
-
-    useEffect(() => {
-        const fetchUnits = async () => {
-            try {
-                const res = await axios.get(`${API_BASE_URL}/users/units`)
-                setUnits(res.data)
-            } catch (err) {
-                console.error('Error fetching units:', err)
-            }
-        }
-        fetchUnits()
-    }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -39,11 +36,7 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
         setError('')
 
         try {
-            const payload = {
-                ...formData,
-                unit_id: formData.unit_id ? Number(formData.unit_id) : undefined
-            }
-            const response = await axios.post(`${API_BASE_URL}/auth/register`, payload)
+            const response = await axios.post(`${API_BASE_URL}/auth/register`, formData)
             const { token, user } = response.data
             
             // Lưu token và user
@@ -139,14 +132,11 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
                             />
                         </div>
                     </div>
-
                     <div style={{ marginBottom: '1rem' }}>
                         <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Cấp bậc</label>
                         <div style={{ position: 'relative' }}>
-                            <Award size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <input
-                                type="text"
-                                placeholder="Thượng úy, Đại úy..."
+                            <Award size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', zIndex: 1 }} />
+                            <select
                                 required
                                 value={formData.rank}
                                 onChange={(e) => setFormData({ ...formData, rank: e.target.value })}
@@ -158,9 +148,16 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
                                     borderRadius: '10px',
                                     color: 'white',
                                     outline: 'none',
-                                    boxSizing: 'border-box'
+                                    appearance: 'none',
+                                    boxSizing: 'border-box',
+                                    cursor: 'pointer'
                                 }}
-                            />
+                            >
+                                <option value="" disabled style={{ background: '#1e293b' }}>Chọn cấp bậc...</option>
+                                {RANK_OPTIONS.map(rank => (
+                                    <option key={rank} value={rank} style={{ background: '#1e293b' }}>{rank}</option>
+                                ))}
+                            </select>
                         </div>
                     </div>
 
@@ -188,32 +185,87 @@ export default function Register({ onLoginSuccess }: { onLoginSuccess: (user: an
                         </div>
                     </div>
 
-                    <div style={{ marginBottom: '1rem' }}>
-                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Đơn vị</label>
-                        <div style={{ position: 'relative' }}>
-                            <MapPin size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                            <select
-                                required
-                                value={formData.unit_id}
-                                onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Số điện thoại</label>
+                            <input 
+                                type="text"
+                                placeholder="09xx..."
+                                value={formData.phone}
+                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                 style={{
                                     width: '100%',
-                                    padding: '0.8rem 1rem 0.8rem 2.5rem',
+                                    padding: '0.8rem 1rem',
                                     background: 'rgba(0,0,0,0.2)',
                                     border: '1px solid var(--border)',
                                     borderRadius: '10px',
                                     color: 'white',
                                     outline: 'none',
-                                    appearance: 'none',
                                     boxSizing: 'border-box'
                                 }}
-                            >
-                                <option value="" disabled style={{ background: '#1e293b' }}>Chọn đơn vị...</option>
-                                {units.map(unit => (
-                                    <option key={unit.id} value={unit.id} style={{ background: '#1e293b' }}>{unit.name}</option>
-                                ))}
-                            </select>
+                            />
                         </div>
+                        <div>
+                            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>CMND/CCCD</label>
+                            <input
+                                type="text"
+                                placeholder="Số định danh..."
+                                value={formData.identity_card}
+                                onChange={(e) => setFormData({ ...formData, identity_card: e.target.value })}
+                                style={{
+                                    width: '100%',
+                                    padding: '0.8rem 1rem',
+                                    background: 'rgba(0,0,0,0.2)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: '10px',
+                                    color: 'white',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                            />
+                        </div>
+                    </div>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Quê quán</label>
+                        <input
+                            type="text"
+                            placeholder="Địa chỉ thường trú..."
+                            value={formData.home_address}
+                            onChange={(e) => setFormData({ ...formData, home_address: e.target.value })}
+                            style={{
+                                width: '100%',
+                                padding: '0.8rem 1rem',
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '10px',
+                                color: 'white',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                            }}
+                        />
+                    </div>
+
+                    <div style={{ marginBottom: '1rem' }}>
+                        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>Đơn vị công tác (Tên đơn vị)</label>
+                        <input
+                            type="text"
+                            placeholder="VD: Đại đội 1, Tiểu đoàn 2..."
+                            required
+                            value={formData.unit_id}
+                            onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
+                            style={{
+                                width: '100%',
+                                padding: '0.8rem 1rem',
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid var(--border)',
+                                borderRadius: '10px',
+                                color: 'white',
+                                outline: 'none',
+                                boxSizing: 'border-box'
+                            }}
+                        />
                     </div>
 
                     <div style={{ marginBottom: '1rem' }}>

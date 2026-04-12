@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { API_URL } from '../../config'
 import { Radio, Activity, Signal, Volume2, Globe, Monitor, Search, RefreshCw } from 'lucide-react';
 
 interface Channel {
@@ -33,7 +34,7 @@ export default function ChannelMonitor({ onLogout }: { onLogout?: () => void }) 
 
   const fetchChannels = async () => {
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/channels`, { headers: getHeaders() });
+      const res = await fetch(`${API_URL}/channels`, { headers: getHeaders() });
       if (res.status === 401) {
         onLogout?.();
         return;
@@ -54,7 +55,7 @@ export default function ChannelMonitor({ onLogout }: { onLogout?: () => void }) 
   const fetchDevicesForChannel = async (channelId: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/channels/${channelId}/devices`, { headers: getHeaders() });
+      const res = await fetch(`${API_URL}/channels/${channelId}/devices`, { headers: getHeaders() });
       const data = await res.json();
       setDevices(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -85,7 +86,7 @@ export default function ChannelMonitor({ onLogout }: { onLogout?: () => void }) 
 
   const handlePing = async (deviceId: number) => {
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/devices/${deviceId}/ping`, {
+      const res = await fetch(`${API_URL}/devices/${deviceId}/ping`, {
         method: 'POST',
         headers: getHeaders()
       });

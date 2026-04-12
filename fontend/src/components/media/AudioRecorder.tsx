@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Save, Pause, RotateCcw } from 'lucide-react';
+import { useNotification } from '../NotificationProvider';
 
 interface AudioRecorderProps {
   onSave: (blob: Blob) => void;
@@ -12,6 +13,7 @@ export default function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) 
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const { showNotification } = useNotification();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -74,7 +76,7 @@ export default function AudioRecorder({ onSave, onCancel }: AudioRecorderProps) 
       visualize(stream);
     } catch (err) {
       console.error("Error accessing microphone:", err);
-      alert("Không thể truy cập Microphone. Vui lòng kiểm tra cài đặt trình duyệt và cấp quyền.");
+      showNotification('warning', "Không thể truy cập Microphone. Vui lòng kiểm tra cài đặt trình duyệt và cấp quyền.");
     }
   };
 

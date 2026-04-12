@@ -15,7 +15,11 @@ const registerSchema = z.object({
   email: z.string().email().optional(),
   rank: z.string().optional(),
   position: z.string().optional(),
-  unit_id: z.number().optional(),
+  unit_id: z.union([z.number(), z.string()]).optional(),
+  phone: z.string().optional(),
+  identity_card: z.string().optional(),
+  home_address: z.string().optional(),
+  unit_address: z.string().optional(),
 });
 
 
@@ -42,7 +46,7 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
     try {
       const { rows } = await server.pg.query(
-        'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, u.unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.username = $1',
+        'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, u.unit_id, u.clearance_level, r.name as role_name, un.name as unit_name FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN units un ON u.unit_id = un.id WHERE u.username = $1',
         [username]
       );
 
@@ -63,7 +67,9 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
         full_name: user.full_name,
         rank: user.rank,
         role_name: user.role_name,
-        unit_id: user.unit_id
+        unit_id: user.unit_id,
+        unit_name: user.unit_name,
+        clearance_level: user.clearance_level
       }, { expiresIn: '7d' });
 
       return { 
@@ -75,7 +81,8 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
           full_name: user.full_name,
           rank: user.rank,
           role_name: user.role_name,
-          unit_id: user.unit_id
+          unit_id: user.unit_id,
+          unit_name: user.unit_name
         }
       };
     } catch (error: any) {
@@ -101,9 +108,19 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
       return reply.code(400).send({ error: 'Dữ liệu không hợp lệ', details: result.error.format() });
     }
 
-    const { username, password, full_name, email, rank, position, unit_id } = result.data;
+    const { 
+      username, password, full_name, email, rank, position, unit_id,
+      phone, identity_card, home_address, unit_address 
+    } = result.data;
     
     try {
+      // Resolve Unit Name/ID
+      let resolvedUnitId = null;
+      if (unit_id) {
+        const { resolveUnitId } = await import('../utils/unit_resolver.js');
+        resolvedUnitId = await resolveUnitId(server.pg, unit_id, 1, true); // Root parent for public reg
+      }
+
       // Check if user exists
       const existingUser = await server.pg.query(
         'SELECT id FROM users WHERE username = $1',
@@ -119,21 +136,27 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
       // Insert into user_registrations (status = 'pending')
       await server.pg.query(
-        'INSERT INTO user_registrations (username, password_hash, full_name, email, rank, position, unit_id, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)',
-        [username, password_hash, full_name || '', email || '', rank || '', position || '', unit_id || null, 'pending']
+        `INSERT INTO user_registrations 
+        (username, password_hash, full_name, email, rank, position, unit_id, phone, identity_card, home_address, unit_address, status) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [
+          username, password_hash, full_name || '', email || '', rank || '', position || '', resolvedUnitId, 
+          phone || '', identity_card || '', home_address || '', unit_address || '', 'pending'
+        ]
       );
 
-      // Notify Admin about new registration
+      // Notify Admin about new registration (Scoped to the unit they are joining)
       await server.pg.query(
-        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority, unit_id) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           'Đăng ký tài khoản mới',
           `Người dùng "${full_name || username}" đang chờ phê duyệt tài khoản.`,
           'info',
           'users',
           'Hệ thống Auth',
-          'high'
+          'high',
+          resolvedUnitId
         ]
       );
 
@@ -166,6 +189,11 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
 
   // 10. Verify token and return user info
   server.get('/verify', { preHandler: [server.authenticate] }, async (request: any, reply) => {
-    return { user: request.user };
+    const { rows } = await server.pg.query(
+      'SELECT u.id, u.username, u.full_name, u.rank, u.unit_id, r.name as role_name, un.name as unit_name FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN units un ON u.unit_id = un.id WHERE u.id = $1',
+      [request.user.id]
+    );
+    if (rows.length === 0) return reply.code(404).send({ error: 'Người dùng không tồn tại' });
+    return { user: rows[0] };
   });
 }

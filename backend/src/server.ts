@@ -24,6 +24,8 @@ import profileRoutes from './routes/profile.js';
 import analyticsRoutes from './routes/analytics.js';
 import reportRoutes from './routes/reports.js';
 import radioRoutes from './routes/radios.js';
+import rbacRoutes from './routes/rbac.js';
+import routineRoutes from './routes/routines.js';
 import fastifyRateLimit from '@fastify/rate-limit';
 
 import { startScheduler } from './scheduler.js';
@@ -51,14 +53,15 @@ const server: FastifyInstance = fastify({
 async function setupServer() {
     // CORS
     await server.register(cors, {
-      origin: process.env.FRONTEND_URL,
+      origin: true, // Allow all origins in development to support Codespaces
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization']
+      allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
+      credentials: true
     });
 
-    // Rate Limiting (Global: 100 req/min)
+    // Rate Limiting (Global: 1000 req/min)
     await server.register(fastifyRateLimit, {
-      max: 100,
+      max: 1000,
       timeWindow: '1 minute',
       errorResponseBuilder: (request, context) => {
         return {
@@ -105,28 +108,65 @@ async function setupServer() {
       }
     });
 
-    // RBAC: Check if user has specific roles and optionally filter by Unit
-    server.decorate("authorize", (allowedRoles: string[], options?: { checkUnit?: boolean }) => {
+    // RBAC: Check if user has specific roles and optionally filter by Unit/Clearance
+    server.decorate("authorize", (allowedRoles: string[], options?: { checkUnit?: boolean, minClearance?: number }) => {
       return async (request: any, reply: any) => {
         const user = request.user;
         
-        // 1. Basic Role Check
-        if (!user || !allowedRoles.includes(user.role_name)) {
-          return reply.code(403).send({ 
-            error: 'Forbidden', 
-            message: 'Bạn không có quyền thực hiện hành động này.' 
-          });
+        if (!user) {
+          return reply.code(401).send({ error: 'Unauthorized' });
         }
 
-        // 2. Optional Unit Check (Bypass for admin)
-        if (options?.checkUnit && user.role_name !== 'admin') {
-          const targetUnitId = request.params.unitId || request.query.unitId || request.body.unit_id;
-          
-          if (targetUnitId && parseInt(targetUnitId) !== user.unit_id) {
+        // 1. Root ID-1 always bypasses all role checks
+        if (user.id === 1) return;
+
+        // 2. Role name check (case-insensitive)
+        const userRole = user.role_name?.toLowerCase();
+        const isAuthorized = allowedRoles.some(role => role.toLowerCase() === userRole || userRole === 'admin');
+
+        if (!isAuthorized) {
+          // Check active delegation
+          const { rowCount } = await server.pg.query(
+            `SELECT 1 FROM delegations d JOIN roles r ON d.role_id = r.id 
+             WHERE d.delegatee_id = $1 AND r.name = ANY($2)
+             AND d.status = 'active' 
+             AND d.start_time <= CURRENT_TIMESTAMP 
+             AND d.end_time >= CURRENT_TIMESTAMP`,
+             [user.id, allowedRoles]
+          );
+
+          if (!rowCount) {
             return reply.code(403).send({ 
               error: 'Forbidden', 
-              message: 'Bạn chỉ có quyền quản lý trong đơn vị của mình.' 
+              message: 'Bạn không có quyền thực hiện hành động này.' 
             });
+          }
+        }
+
+        // 2. Clearance Level Check (ID 1 always bypasses)
+        if (options?.minClearance && user.role_name?.toLowerCase() !== 'admin' && user.id !== 1) {
+          if ((user.clearance_level || 1) < options.minClearance) {
+            return reply.code(403).send({ 
+              error: 'Forbidden', 
+              message: 'Tài liệu vượt quá mức độ tiếp cận (độ mật) của bạn.' 
+            });
+          }
+        }
+
+        // 3. Optional Unit Check (Bypass for admin with ID 1)
+        if (options?.checkUnit && user.role_name?.toLowerCase() !== 'admin' && user.id !== 1) {
+          const targetUnitId = request.params.unitId || request.query.unitId || request.body.unit_id || request.body.unitId;
+          
+          if (targetUnitId) {
+            const { getDescendantUnitIds } = await import('./utils/unit_utils.js');
+            const unitScope = await getDescendantUnitIds(server.pg, user.unit_id);
+            
+            if (!unitScope.includes(parseInt(targetUnitId))) {
+              return reply.code(403).send({ 
+                error: 'Forbidden', 
+                message: 'Bạn chỉ có quyền quản lý trong phạm vi đơn vị của mình và các đơn vị trực thuộc.' 
+              });
+            }
           }
         }
       };
@@ -150,6 +190,8 @@ async function setupServer() {
     await server.register(reportRoutes, { prefix: '/reports' });
     await server.register(profileRoutes, { prefix: '/profile' });
     await server.register(radioRoutes, { prefix: '/radios' });
+    await server.register(rbacRoutes, { prefix: '/rbac' });
+    await server.register(routineRoutes, { prefix: '/routines' });
 
 
     // Root route

@@ -12,7 +12,9 @@ import {
   Music
 } from 'lucide-react';
 
-const SOCKET_URL = `ws://${window.location.hostname}:3000/ws`;
+import { API_URL, WEBSOCKET_URL } from '../../config'
+
+const SOCKET_URL = WEBSOCKET_URL;
 
 const BroadcastTerminal = () => {
   const [status, setStatus] = useState<'standby' | 'playing' | 'error'>('standby');
@@ -40,7 +42,7 @@ const BroadcastTerminal = () => {
 
   const fetchChannels = async () => {
     try {
-      const response = await fetch(`http://${window.location.hostname}:3000/channels`);
+      const response = await fetch(`${API_URL}/channels`);
       const data = await response.json();
       setChannels(Array.isArray(data) ? data : []);
       // Set first channel as default if none selected
@@ -145,7 +147,7 @@ const BroadcastTerminal = () => {
     // Check if URL is local/relative or absolute
     let finalUrl = url;
     if (url && !url.startsWith('http')) {
-        finalUrl = `http://${window.location.hostname}:3000${url.startsWith('/') ? '' : '/'}${url}`;
+        finalUrl = `${API_URL}${url.startsWith('/') ? '' : '/'}${url}`;
     }
 
     audioRef.current.src = finalUrl;

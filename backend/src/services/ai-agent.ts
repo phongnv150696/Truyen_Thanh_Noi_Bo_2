@@ -43,17 +43,18 @@ export class AIAgentService {
         [contentId, 'ai', score, policyResult.feedback || 'Nội dung phù hợp với tiêu chuẩn phát thanh quân sự.', isSensitive]
       );
 
-      // 5. Create Notification
+      // 5. Create Notification (Scoped to content unit)
       await client.query(
-        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority, unit_id) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           'Bản tin mới chờ duyệt', 
           'Bạn có 1 bản tin mới chờ duyệt.',
           isSensitive ? 'warning' : 'info',
           'ai',
           'Hệ thống AI',
-          isSensitive ? 'high' : 'medium'
+          isSensitive ? 'high' : 'medium',
+          content.unit_id
         ]
       );
 
@@ -134,7 +135,7 @@ export class AIAgentService {
     const client = await this.fastify.pg.connect();
     try {
       // 1. Fetch content metadata
-      const { rows: contentRows } = await client.query('SELECT title, tags FROM content_items WHERE id = $1', [contentId]);
+      const { rows: contentRows } = await client.query('SELECT title, tags, unit_id FROM content_items WHERE id = $1', [contentId]);
       if (contentRows.length === 0) throw new Error('Content not found');
       
       const content = contentRows[0];
@@ -176,15 +177,16 @@ export class AIAgentService {
 
       // 5. Create Notification for Suggestion
       await client.query(
-        `INSERT INTO notifications (title, message, type, link, sender_name, priority) 
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+        `INSERT INTO notifications (title, message, type, link, sender_name, priority, unit_id) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           'Đề xuất lịch phát sóng', 
           `Hệ thống AI vừa đề xuất lịch phát sóng tối ưu cho bản tin "${content.title}".`,
           'info',
           'ai',
           'Trợ lý AI',
-          'medium'
+          'medium',
+          content.unit_id
         ]
       );
 
@@ -203,34 +205,76 @@ export class AIAgentService {
    * Generates a formal military broadcast script from raw notes/text.
    */
   async generateScript(rawText: string) {
-    // In a production app, this would call Gemini, Claude or OpenAI.
-    // Here we simulate a high-quality transformation.
-    
-    const lines = rawText.split('\n').filter(l => l.trim().length > 0);
-    const title = lines[0] || 'Thông báo mới';
-    
-    const script = `
-[LỜI CHÀO/MỞ ĐẦU]
-Kính thưa các đồng chí cán bộ, chiến sĩ toàn đơn vị! 
-Đây là bản tin nội bộ từ hệ thống phát thanh OpenClaw. Sau đây là thông tin về: "${title}".
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Chưa cấu hình GEMINI_API_KEY');
+    }
 
-[NỘI DUNG CHÍNH]
-Căn cứ vào kế hoạch công tác, đơn vị chúng ta triển khai nội dung sau:
-${lines.map(l => `- ${l}`).join('\n')}
+    const payload = {
+      contents: [{
+        parts: [{
+          text: `Bạn là biên tập viên chuyên nghiệp của đài phát thanh. Dưới đây là nội dung một bản tin.
+Nhiệm vụ của bạn là dọn dẹp và chuẩn hóa văn bản này để sẵn sàng đọc lên đài phát thanh:
+1. Loại bỏ các phần thể thức hành chính nếu có (nhảy quan, tiêu ngữ, thông tin người ký, nơi nhận...).
+2. Chỉ tập trung dọn dẹp nội dung chính: sửa lỗi chính tả, chuyển các từ viết tắt thành từ đầy đủ, loại bỏ các khoảng trắng và dãn dòng dư thừa.
+3. TUYỆT ĐỐI KHÔNG TÓM TẮT, KHÔNG LƯỢC BỎ bất kỳ thông tin quan trọng hay câu văn nào của nội dung gốc. Giữ nguyên 100% các con số, sự kiện và thông tin chi tiết. 
+4. KHÔNG tự ý thay đổi văn phong hay cấu trúc câu của người dùng, ngoại trừ việc sửa lỗi ngữ pháp cơ bản để câu văn chuẩn xác hơn.
+5. Mở đầu bằng lời chào: "Kính chào các đồng chí và các bạn, mời các đồng chí đến với bản tin phát thanh hôm nay."
+6. Kết thúc bằng lời chào: "Bản tin đến đây là kết thúc, xin cảm ơn và chúc sức khỏe các đồng chí."
+7. Kết quả trả về phải là 100% VĂN BẢN THUẦN, không sử dụng định dạng Markdown (như **, #, -), không chứa các ghi chú hay ngoặc vuông.
 
-Yêu cầu các bộ phận liên quan nắm vững và triển khai nghiêm túc, đảm bảo đúng tiến độ và kỷ luật quân đội.
-
-[KẾT LUẬN]
-Đề nghị các đồng chí chú ý theo dõi các bản tin tiếp theo để cập nhật tình hình.
-Chúc các đồng chí hoàn thành tốt nhiệm vụ được giao!
-Xin trân trọng cảm ơn!
-    `.trim();
-
-    return {
-      title: `Bản tin: ${title}`,
-      script: script,
-      wordCount: script.split(' ').length,
-      estimatedDuration: Math.ceil(script.split(' ').length / 150) + ' phút'
+Văn bản cần xử lý:
+${rawText}`
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2048,
+        topP: 0.8,
+        topK: 40
+      }
     };
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b:generateContent?key=${apiKey}`;
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const data = await response.json();
+      if (!response.ok) {
+        console.error('Gemini error details:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: data
+        });
+        throw new Error(`Lỗi gọi API Google Gemini: ${response.status} ${response.statusText}`);
+      }
+
+      let script = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+      if (!script) {
+        console.error('Gemini returned empty parts:', data);
+        throw new Error('AI không trả về nội dung kịch bản');
+      }
+
+      // Fallback cleanup if the AI still outputs markdown
+      script = script.replace(/\*\*/g, '').replace(/#/g, '');
+
+      const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+      const title = lines[0] || 'Thông báo mới';
+
+      return {
+        title: `Bản tin: ${title.substring(0, 60)}...`,
+        script: script,
+        wordCount: script.split(/\s+/).length,
+        estimatedDuration: Math.ceil(script.split(/\s+/).length / 130) + ' phút'
+      };
+    } catch (err) {
+      console.error('generateScript error:', err);
+      throw err;
+    }
   }
 }

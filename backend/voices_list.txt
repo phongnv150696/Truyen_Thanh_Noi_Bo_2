@@ -1,0 +1,2 @@
+Name: Microsoft Server Speech Text to Speech Voice (vi-VN, HoaiMyNeural), Gender: Female
+Name: Microsoft Server Speech Text to Speech Voice (vi-VN, NamMinhNeural), Gender: Male

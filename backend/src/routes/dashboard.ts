@@ -2,80 +2,82 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 
 export default async function dashboardRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
-  // 1. Get Dashboard Summary Stats
-  fastify.get('/stats', async (request, reply) => {
+  // 1. Get Dashboard Summary Stats (Scoped by Unit)
+  fastify.get('/stats', { preHandler: [fastify.authenticate] }, async (request: any, reply) => {
+    const user = request.user as any;
     const client = await fastify.pg.connect();
     try {
-      // Aggregate data from multiple tables
-      let deviceStats, mediaStats, userStats, broadcastHistory, scheduleProposals, pendingContentCount;
-      
-      try {
-        const res = await client.query('SELECT COUNT(*) as total, COUNT(status) FILTER (WHERE status = $1) as online FROM devices', ['online']);
-        deviceStats = res.rows[0];
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
+      const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+      let unitFilter = '';
+      const params: any[] = [];
+      let unitIds: number[] = [];
+      const isAdmin = (user.role_name?.toLowerCase() === 'admin' || user.id === 1);
+
+      if (!isAdmin) {
+        unitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        unitFilter = 'WHERE unit_id = ANY($1)';
+        params.push(unitIds);
       }
 
-      try {
-        const res = await client.query('SELECT COUNT(*) as total, SUM(file_size) as total_size FROM media_files');
-        mediaStats = res.rows[0];
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
-      }
+      // 1. Device Stats
+      const deviceRes = await client.query(`
+        SELECT COUNT(*) as total, COUNT(status) FILTER (WHERE status = 'online') as online 
+        FROM devices ${unitFilter}
+      `, params);
+      const deviceStats = deviceRes.rows[0];
 
-      try {
-        const [usersCount, pendingCount] = await Promise.all([
-            client.query('SELECT COUNT(*) as total FROM users'),
-            client.query('SELECT COUNT(*) as pending FROM user_registrations WHERE status = $1', ['pending'])
-        ]);
-        userStats = {
-            total: usersCount.rows[0].total,
-            pending: pendingCount.rows[0].pending
-        };
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
-      }
+      // 2. Media Stats
+      const mediaRes = await client.query(`
+        SELECT COUNT(id) as total, SUM(file_size) as total_size 
+        FROM media_files
+        ${!isAdmin ? 'WHERE unit_id = ANY($1)' : ''}
+      `, params);
+      const mediaStats = mediaRes.rows[0];
 
-      try {
-        // Checking for history - using broadcast_schedules and joining with content/channels
-        // Using scheduled_time as seen in seed scripts
-        const res = await client.query(`
-          SELECT 
-            bs.id, 
-            bs.scheduled_time as start_time, 
-            c.name as channel_name, 
-            ci.title as content_title 
-          FROM broadcast_schedules bs
-          JOIN channels c ON bs.channel_id = c.id
-          JOIN content_items ci ON bs.content_id = ci.id
-          ORDER BY bs.scheduled_time DESC 
-          LIMIT 5
-        `);
-        broadcastHistory = res.rows;
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
-      }
+      // 3. User Stats
+      const usersCountRes = await client.query(`SELECT COUNT(*) as total FROM users ${unitFilter}`, params);
+      const pendingRegRes = await client.query(`
+        SELECT COUNT(*) as pending 
+        FROM user_registrations 
+        WHERE status = 'pending' ${!isAdmin ? 'AND unit_id = ANY($1)' : ''}
+      `, params);
+      const userStats = {
+        total: usersCountRes.rows[0].total,
+        pending: pendingRegRes.rows[0].pending
+      };
 
-      try {
-        const res = await client.query('SELECT COUNT(*) as count FROM content_items WHERE status = $1', ['pending_review']);
-        pendingContentCount = res.rows[0].count;
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
-      }
+      // 4. Pending Content
+      const pendingContentRes = await client.query(`
+        SELECT COUNT(c.id) as count 
+        FROM content_items c
+        LEFT JOIN users u ON c.author_id = u.id
+        WHERE c.status = 'pending_review' 
+        ${!isAdmin ? 'AND (u.unit_id = ANY($1) OR c.unit_id = ANY($1))' : ''}
+      `, params);
+      const pendingContentCount = pendingContentRes.rows[0].count;
 
-      try {
-        // Proposals - Let's make this reflect total pending actions (content + users)
-        const res = await client.query('SELECT COUNT(*) as count FROM broadcast_schedules');
-        scheduleProposals = res.rows[0];
-      } catch (err) {
-        fastify.log.error(err as any);
-        throw err;
-      }
+      // 5. Broadcast History (Last 5)
+      const broadcastHistoryRes = await client.query(`
+        SELECT 
+          bs.id, bs.scheduled_time as start_time, 
+          c.name as channel_name, ci.title as content_title 
+        FROM broadcast_schedules bs
+        JOIN channels c ON bs.channel_id = c.id
+        LEFT JOIN content_items ci ON bs.content_id = ci.id
+        ${!isAdmin ? 'WHERE c.unit_id = ANY($1)' : ''}
+        ORDER BY bs.scheduled_time DESC 
+        LIMIT 5
+      `, params);
+      const broadcastHistory = broadcastHistoryRes.rows;
+
+      // 6. Schedule Proposals (Total active schedules for unit)
+      const scheduleRes = await client.query(`
+        SELECT COUNT(bs.id) as count 
+        FROM broadcast_schedules bs
+        JOIN channels c ON bs.channel_id = c.id
+        ${!isAdmin ? 'WHERE c.unit_id = ANY($1)' : ''}
+      `, params);
+      const scheduleProposals = scheduleRes.rows[0];
 
       return {
         devices: {
@@ -94,9 +96,6 @@ export default async function dashboardRoutes(fastify: FastifyInstance, options:
         history: broadcastHistory,
         proposals: parseInt(scheduleProposals.count || '0')
       };
-    } catch (err: any) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Failed to fetch dashboard stats', detail: err.message });
     } finally {
       client.release();
     }

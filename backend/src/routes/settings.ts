@@ -2,8 +2,15 @@ import { FastifyInstance, FastifyPluginOptions } from 'fastify';
 
 export default async function settingsRoutes(fastify: FastifyInstance, options: FastifyPluginOptions) {
   
-  // 1. Get All Settings & Metrics
-  fastify.get('/', async (request, reply) => {
+  // 1. Get All Settings & Metrics (Restricted to Global Admin)
+  fastify.get('/', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const user = request.user as any;
+    
+    // Only Global Admins (Unit 1) can view/manage global system settings
+    if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+      return reply.code(403).send({ error: 'Bạn không có quyền truy cập cài đặt hệ thống.' });
+    }
+
     const client = await fastify.pg.connect();
     try {
       const [configRes, healthRes] = await Promise.all([
@@ -20,10 +27,15 @@ export default async function settingsRoutes(fastify: FastifyInstance, options: 
     }
   });
 
-  // 2. Update Configuration
-  fastify.patch('/:key', async (request, reply) => {
+  // 2. Update Configuration (Restricted to Global Admin)
+  fastify.patch('/:key', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const user = request.user as any;
     const { key } = request.params as { key: string };
     const { value } = request.body as { value: string };
+
+    if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+      return reply.code(403).send({ error: 'Bạn không có quyền sửa đổi cài đặt hệ thống.' });
+    }
 
     if (value === undefined) {
       return reply.code(400).send({ error: 'Value is required' });
@@ -44,18 +56,18 @@ export default async function settingsRoutes(fastify: FastifyInstance, options: 
       }
 
       return { message: 'Configuration updated successfully', config: rows[0] };
-    } catch (err) {
-      fastify.log.error(err);
-      return reply.code(500).send({ error: 'Failed to update configuration' });
     } finally {
       client.release();
     }
   });
 
-  // 3. Get Health Status (Detailed)
-  fastify.get('/health', async (request, reply) => {
-    // Note: In a real app, this might poll real os metrics
-    // For now, we return the latest recorded metrics from DB
+  // 3. Get Health Status (Detailed) - Restricted to Global Admin
+  fastify.get('/health', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const user = request.user as any;
+    if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+      return reply.code(403).send({ error: 'Bạn không có quyền xem thông tin sức khỏe hệ thống.' });
+    }
+
     const client = await fastify.pg.connect();
     try {
       const { rows } = await client.query('SELECT * FROM health_metrics ORDER BY recorded_at DESC LIMIT 10');
@@ -65,31 +77,54 @@ export default async function settingsRoutes(fastify: FastifyInstance, options: 
     }
   });
 
-  // 4. Get Audit Logs with Pagination
-  fastify.get('/audit-logs', async (request, reply) => {
+  // 4. Get Audit Logs (Scoped by Unit)
+  fastify.get('/audit-logs', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    const user = request.user as any;
     const { page = 1, limit = 50, action = '' } = request.query as { page?: number, limit?: number, action?: string };
     
     const offset = (page - 1) * limit;
     const client = await fastify.pg.connect();
     
     try {
-      let query = `
-        SELECT a.*, u.full_name, u.username 
-        FROM audit_logs a
-        LEFT JOIN users u ON a.user_id = u.id
-      `;
-      let countQuery = 'SELECT COUNT(*) FROM audit_logs a';
+      const { getDescendantUnitIds } = await import('../utils/unit_utils.js');
+      let unitFilter = '';
       const queryParams: any[] = [];
       const countParams: any[] = [];
+      let paramIdx = 1;
+
+      // Scoped Admin Logic
+      if (!(user.role_name?.toLowerCase() === 'admin' || user.id === 1)) {
+        const descendantUnitIds = await getDescendantUnitIds(fastify.pg, user.unit_id);
+        // Scoped view: Logs belonging to the unit tree.
+        unitFilter = ` WHERE a.unit_id = ANY($${paramIdx++})`;
+        queryParams.push(descendantUnitIds);
+        countParams.push(descendantUnitIds);
+      }
 
       if (action) {
-        query += ' WHERE a.action = $1';
-        countQuery += ' WHERE a.action = $1';
+        const actionPrefix = unitFilter ? ' AND ' : ' WHERE ';
+        unitFilter += `${actionPrefix}a.action = $${paramIdx++}`;
         queryParams.push(action);
         countParams.push(action);
       }
 
-      query += ` ORDER BY a.created_at DESC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+      const query = `
+        SELECT a.*, u.full_name, u.username, ur.name as unit_name
+        FROM audit_logs a
+        JOIN users u ON a.user_id = u.id
+        LEFT JOIN units ur ON u.unit_id = ur.id
+        ${unitFilter}
+        ORDER BY a.created_at DESC 
+        LIMIT $${paramIdx++} OFFSET $${paramIdx++}
+      `;
+
+      const countQuery = `
+        SELECT COUNT(*) 
+        FROM audit_logs a
+        JOIN users u ON a.user_id = u.id
+        ${unitFilter}
+      `;
+
       queryParams.push(limit, offset);
 
       const [logsRes, countRes] = await Promise.all([
@@ -111,4 +146,3 @@ export default async function settingsRoutes(fastify: FastifyInstance, options: 
     }
   });
 }
-

@@ -14,14 +14,18 @@ export interface TTSOptions {
 }
 
 export async function generateTTS(options: TTSOptions): Promise<void> {
-    const { text, voice = 'vi-VN-HoaiMyNeural', rate = '+0%', pitch = '+0Hz', outputPath } = options;
+    const { text, voice = 'gemini-Aoede', rate = '+0%', pitch = '+0Hz', outputPath } = options;
     const scriptPath = path.join(__dirname, 'tts-generate.py');
     
     return new Promise((resolve, reject) => {
-      // Calling python3 or python based on environment
       const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
       
-      const pythonProcess = spawn(pythonCmd, [scriptPath, text, voice, rate, pitch, outputPath]);
+      const processArgs = [scriptPath, text, voice, rate, pitch, outputPath];
+      if (voice.toLowerCase().startsWith('gemini-')) {
+          processArgs.push(process.env.GEMINI_API_KEY || '');
+      }
+      
+      const pythonProcess = spawn(pythonCmd, processArgs);
     
     let errorOutput = '';
     

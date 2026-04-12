@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { API_URL } from '../../config'
 import { 
   Languages,
   Plus,
@@ -57,7 +58,7 @@ export default function MilitaryDictionary({ onLogout }: { onLogout?: () => void
   const fetchEntries = async () => {
     try {
       setLoading(true)
-      const res = await fetch(`http://${window.location.hostname}:3000/dictionary`, {
+      const res = await fetch(`${API_URL}/dictionary`, {
         headers: getHeaders()
       })
       if (res.status === 401) {
@@ -95,8 +96,8 @@ export default function MilitaryDictionary({ onLogout }: { onLogout?: () => void
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     const url = editingEntry 
-      ? `http://${window.location.hostname}:3000/dictionary/${editingEntry.id}` 
-      : `http://${window.location.hostname}:3000/dictionary`
+      ? `${API_URL}/dictionary/${editingEntry.id}` 
+      : `${API_URL}/dictionary`
     const method = editingEntry ? 'PUT' : 'POST'
 
     try {
@@ -118,7 +119,7 @@ export default function MilitaryDictionary({ onLogout }: { onLogout?: () => void
   const handleDelete = async (id: number) => {
     if (!confirm('Bạn có chắc chắn muốn xóa từ này khỏi từ điển?')) return
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/dictionary/${id}`, { 
+      const res = await fetch(`${API_URL}/dictionary/${id}`, { 
         method: 'DELETE',
         headers: getHeaders()
       })

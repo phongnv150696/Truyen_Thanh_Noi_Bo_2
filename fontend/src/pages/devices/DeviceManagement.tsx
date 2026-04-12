@@ -8,17 +8,20 @@ import {
   MoreVertical, 
   Smartphone, 
   Speaker, 
-  Activity,
-  XCircle,
   X,
   Check,
   AlertCircle,
   LayoutGrid,
   Building2,
-  Radio as RadioIcon,
   ChevronDown,
   ChevronUp,
-  Cpu
+  Cpu,
+  Zap,
+  Volume2,
+  Settings2,
+  ShieldAlert,
+  Signal,
+  History
 } from 'lucide-react';
 
 interface Device {
@@ -29,24 +32,24 @@ interface Device {
   status: 'online' | 'offline' | 'maintenance';
   unit_id?: number;
   unit_name?: string;
-  channel_id?: number;
-  channel_name?: string;
   last_seen: string;
-}
-
-interface Channel {
-  id: number;
-  name: string;
+  volume: number;
+  signal_strength: number;
+  firmware_version: string;
+  last_maintenance?: string;
+  maintenance_notes?: string;
 }
 
 interface Unit {
   id: number;
   name: string;
+  parent_id: number | null;
+  level: number;
 }
 
-const API_URL = `http://${window.location.hostname}:3000`;
+import { API_URL, WEBSOCKET_URL } from '../../config'
 
-export default function DeviceManagement({ onLogout }: { onLogout?: () => void }) {
+export default function DeviceManagement({ user, onLogout }: { user: any, onLogout?: () => void }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -58,7 +61,6 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
 
   // CRUD States
   const [units, setUnits] = useState<Unit[]>([]);
-  const [channels, setChannels] = useState<Channel[]>([]);
   const [showModal, setShowModal] = useState<'add' | 'edit' | 'delete' | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -67,10 +69,41 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
     name: '',
     type: 'speaker',
     ip_address: '',
-    unit_id: '',
-    channel_id: ''
+    unit_id: ''
   });
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [currentUserUnitName, setCurrentUserUnitName] = useState<string>(user?.unit_name || '');
+  
+  // 6-Level Hierarchy State
+  const [selectedLevels, setSelectedLevels] = useState<{ [key: number]: string | number }>({
+    1: '', 2: '', 3: '', 4: '', 5: '', 6: ''
+  });
+
+  const getUnitsByLevel = (level: number, parentId?: string | number) => {
+    return units.filter(u => u.level === level && (!parentId || u.parent_id === Number(parentId)));
+  };
+
+  const handleLevelChange = (level: number, val: string) => {
+    const newLevels = { ...selectedLevels, [level]: val };
+    // Reset lower levels
+    for (let i = level + 1; i <= 6; i++) newLevels[i] = '';
+    setSelectedLevels(newLevels);
+    
+    // Update main unit_id (use the lowest selected non-empty level)
+    let finalUnit = val;
+    if (!val) {
+      for (let i = level - 1; i >= 1; i--) {
+        if (newLevels[i]) {
+          finalUnit = String(newLevels[i]);
+          break;
+        }
+      }
+    }
+    setFormData(prev => ({ ...prev, unit_id: finalUnit }));
+  };
+  
+  const [showCommandModal, setShowCommandModal] = useState<Device | null>(null);
+  const [commandLoading, setCommandLoading] = useState(false);
 
   const getHeaders = () => {
     const token = localStorage.getItem('openclaw_token')
@@ -113,7 +146,7 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
 
   const fetchUnits = async () => {
     try {
-      const response = await fetch(`${API_URL}/users/units`, {
+      const response = await fetch(`${API_URL}/users/units?scope=all_visible`, {
         headers: getHeaders()
       });
       const data = await response.json();
@@ -123,27 +156,28 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
     }
   };
 
-  const fetchChannels = async () => {
-    try {
-      const response = await fetch(`${API_URL}/channels`, {
-        headers: getHeaders()
-      });
-      const data = await response.json();
-      setChannels(Array.isArray(data) ? data : []);
-    } catch (error) {
-      console.error('Error fetching channels:', error);
-    }
-  };
-
   useEffect(() => {
     fetchDevices();
     fetchUnits();
-    fetchChannels();
     setSelectedIds([]);
 
+
+    // Resilience: Fetch unit name if missing in props
+    if (!user?.unit_name) {
+      const getUnitInfo = async () => {
+        try {
+          const res = await fetch(`${API_URL}/auth/verify`, { headers: getHeaders() });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.user?.unit_name) setCurrentUserUnitName(data.user.unit_name);
+          }
+        } catch (e) { console.error('Failed to fetch user unit info', e); }
+      };
+      getUnitInfo();
+    }
+
     // Initialize WebSocket
-    const host = window.location.hostname || 'localhost';
-    const socket = new WebSocket(`ws://${host}:3000/ws`);
+    const socket = new WebSocket(WEBSOCKET_URL);
     
     socket.onopen = () => {
       console.log('Connected to WebSocket');
@@ -187,6 +221,32 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
     };
   }, []);
 
+  // Sync selectedLevels whenever modal state or units list changes
+  useEffect(() => {
+    if (!showModal || units.length === 0) return;
+
+    const levels: { [key: number]: string | number } = { 1: '', 2: '', 3: '', 4: '', 5: '', 6: '' };
+    let startUnitId: number | null | undefined = null;
+
+    if (showModal === 'add') {
+      startUnitId = user?.unit_id;
+    } else if (showModal === 'edit' && selectedDevice) {
+      startUnitId = selectedDevice.unit_id;
+    }
+
+    if (startUnitId) {
+      let currentId: number | null | undefined = startUnitId;
+      while (currentId) {
+        const u = units.find(unit => unit.id === currentId);
+        if (u) {
+          levels[u.level] = u.id;
+          currentId = u.parent_id;
+        } else break;
+      }
+      setSelectedLevels(levels);
+    }
+  }, [showModal, units, selectedDevice, user]);
+
   // Handle outside click for action menu
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -216,7 +276,6 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
     return filteredDevices.reduce((acc: GroupedDevices, dev: Device) => {
       let key = "Không xác định";
       if (groupBy === 'unit') key = dev.unit_name || "Chưa phân đơn vị";
-      if (groupBy === 'channel') key = dev.channel_name || "Chưa gán kênh";
       
       if (!acc[key]) acc[key] = [];
       acc[key].push(dev);
@@ -253,7 +312,7 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
   };
 
   const openAddModal = () => {
-    setFormData({ name: '', type: 'speaker', ip_address: '', unit_id: '', channel_id: '' });
+    setFormData({ name: '', type: 'speaker', ip_address: '', unit_id: currentUserUnitName || user.unit_name || '' });
     setError(null);
     setShowModal('add');
   };
@@ -264,9 +323,9 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
       name: device.name,
       type: device.type,
       ip_address: device.ip_address || '',
-      unit_id: device.unit_id?.toString() || '',
-      channel_id: device.channel_id?.toString() || ''
+      unit_id: device.unit_id?.toString() || ''
     });
+
     setError(null);
     setShowModal('edit');
   };
@@ -289,17 +348,28 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
     const method = showModal === 'edit' ? 'PATCH' : 'POST';
 
     try {
+      // Resolve Parent Context for typed unit names
+      let parentUnitId = null;
+      for (let i = 6; i >= 1; i--) {
+        if (selectedLevels[i]) {
+          parentUnitId = selectedLevels[i - 1] || null;
+          break;
+        }
+      }
+
+      const payload = {
+        ...formData,
+        unit_id: formData.unit_id || null, 
+        parent_unit_id: parentUnitId
+      };
+
       const response = await fetch(url, {
         method,
         headers: { 
           'Content-Type': 'application/json',
           ...getHeaders()
         },
-        body: JSON.stringify({
-          ...formData,
-          unit_id: formData.unit_id ? parseInt(formData.unit_id) : null,
-          channel_id: formData.channel_id ? parseInt(formData.channel_id) : null
-        })
+        body: JSON.stringify(payload)
       });
 
       if (response.ok) {
@@ -376,6 +446,36 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
   };
 
 
+  const handleDeviceCommand = async (deviceId: number, command: string, payload: any = {}) => {
+    setCommandLoading(true);
+    try {
+      const response = await fetch(`${API_URL}/devices/${deviceId}/command`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getHeaders()
+        },
+        body: JSON.stringify({ command, payload })
+      });
+
+      if (response.ok) {
+        // Success notification or sound could go here
+        if (command === 'REBOOT') {
+            setShowCommandModal(null);
+        }
+        await fetchDevices();
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        alert(errorData.error || 'Lệnh thực thi thất bại.');
+      }
+    } catch (err) {
+      console.error('Command error:', err);
+      alert('Lỗi kết nối khi gửi lệnh.');
+    } finally {
+      setCommandLoading(false);
+    }
+  };
+
   const toggleItemSelect = (id: number) => {
     setSelectedIds(prev => 
       prev.includes(id) ? prev.filter(sid => sid !== id) : [...prev, id]
@@ -409,37 +509,39 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
       {/* 2. Stats Grid */}
       <section className="section-container animate-fade-in" style={{ width: '100%', marginBottom: '2.5rem' }}>
         <div className="stats-grid">
-          <div className="stat-card" style={{ padding: '1.8rem' }}>
+          <div className="stat-card" style={{ padding: '1.8rem', borderTop: '4px solid #6366f1' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ width: '55px', height: '55px', background: 'rgba(99, 102, 241, 0.1)', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Smartphone size={28} color="#6366f1" />
               </div>
-              <span style={{ fontSize: '0.9rem', color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Tổng thiết bị</span>
+              <span style={{ fontSize: '0.9rem', color: '#6366f1', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Tổng trạm</span>
             </div>
-            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Số lượng phần cứng quản lý</p>
+            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Các điểm phát/loa toàn hệ thống</p>
             <div className="stat-value" style={{ fontSize: '2.8rem' }}>{stats.total}</div>
           </div>
 
-          <div className="stat-card" style={{ padding: '1.8rem' }}>
+          <div className="stat-card" style={{ padding: '1.8rem', borderTop: '4px solid #10b981' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ width: '55px', height: '55px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Activity size={28} color="#10b981" />
+                <Zap size={28} color="#10b981" />
               </div>
-              <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Hoạt động</span>
+              <span style={{ fontSize: '0.9rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Phát sóng</span>
             </div>
-            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Đang trực tuyến (Online)</p>
+            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Trạng thái trực tuyến (Online)</p>
             <div className="stat-value" style={{ fontSize: '2.8rem', color: '#10b981' }}>{stats.online}</div>
           </div>
 
-          <div className="stat-card" style={{ padding: '1.8rem' }}>
+          <div className="stat-card" style={{ padding: '1.8rem', borderTop: '4px solid #f59e0b' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ width: '55px', height: '55px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <XCircle size={28} color="#ef4444" />
+              <div style={{ width: '55px', height: '55px', background: 'rgba(245, 158, 11, 0.1)', borderRadius: '15px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Signal size={28} color="#f59e0b" />
               </div>
-              <span style={{ fontSize: '0.9rem', color: '#ef4444', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Ngoại tuyến</span>
+              <span style={{ fontSize: '0.9rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px' }}>Sóng yếu</span>
             </div>
-            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Mất kết nối / Bảo trì</p>
-            <div className="stat-value" style={{ fontSize: '2.8rem', color: '#ef4444' }}>{stats.offline + stats.maintenance}</div>
+            <p style={{ color: '#94a3b8', marginTop: '1.2rem', marginBottom: '0.4rem', fontWeight: 500, fontSize: '0.95rem' }}>Tín hiệu dưới ngưỡng 40%</p>
+            <div className="stat-value" style={{ fontSize: '2.8rem', color: '#f59e0b' }}>
+              {devices.filter(d => d.status === 'online' && d.signal_strength < 40).length}
+            </div>
           </div>
         </div>
       </section>
@@ -559,27 +661,6 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
             <Building2 size={16} />
             <span>Theo Đơn vị</span>
           </button>
-
-          <button 
-            onClick={() => setGroupBy('channel')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: groupBy === 'channel' ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
-              color: groupBy === 'channel' ? '#818cf8' : '#64748b',
-              border: 'none',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <RadioIcon size={16} />
-            <span>Theo Kênh</span>
-          </button>
         </div>
 
         {selectedIds.length > 0 && (
@@ -594,8 +675,8 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
             alignItems: 'center'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#f87171', fontWeight: 600 }}>
-              <Trash2 size={20} />
-              <span>Đã chọn {selectedIds.length} thiết bị</span>
+               <Trash2 size={20} />
+               <span>Đã chọn {selectedIds.length} thiết bị</span>
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button 
@@ -659,7 +740,6 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                   {expandedGroups.includes(groupName) ? <ChevronDown size={18} color="#94a3b8" /> : <ChevronUp size={18} color="#94a3b8" />}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     {groupBy === 'unit' && <Building2 size={18} color="#818cf8" />}
-                    {groupBy === 'channel' && <RadioIcon size={18} color="#818cf8" />}
                     <span style={{ fontWeight: 800, fontSize: '0.95rem', color: '#f1f5f9' }}>{groupName}</span>
                     <span style={{ 
                       fontSize: '0.75rem', 
@@ -676,7 +756,6 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
 
                 {expandedGroups.includes(groupName) && (
                   <div className="glass-card" style={{ overflow: 'hidden' }}>
-                    {/* Sub-header for Table labels (optional, show only if expanded) */}
                     <div style={{
                       padding: '0.6rem 1.2rem',
                       background: 'rgba(255,255,255,0.01)',
@@ -705,10 +784,10 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                       </div>
                       <span style={{ width: '60px' }}>ID</span>
                       <span style={{ flex: 1.5 }}>Tên thiết bị</span>
-                      <span style={{ flex: 1 }}>Kênh</span>
-                      <span style={{ flex: 0.8 }}>Địa chỉ IP</span>
-                      <span style={{ flex: 0.8 }}>Trạng thái</span>
-                      <span style={{ width: '120px', textAlign: 'right' }}>Thao tác</span>
+                      <span style={{ flex: 1 }}>Đơn vị quản lý</span>
+                      <span style={{ flex: 1.2 }}>Chỉ số Tín hiệu & Âm lượng</span>
+                      <span style={{ flex: 0.6 }}>Trạng thái</span>
+                      <span style={{ width: '120px', textAlign: 'right' }}>Điều khiển</span>
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -734,8 +813,8 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                             />
                           </div>
                           <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
-                            #{device.id}
-                          </div>
+                             #{device.id}
+                           </div>
                           <div style={{ flex: 1.5, display: 'flex', alignItems: 'center', gap: '15px' }}>
                             <div style={{ 
                               width: '36px', 
@@ -745,99 +824,118 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                               display: 'flex', 
                               alignItems: 'center', 
                               justifyContent: 'center',
-                              border: '1px solid rgba(255,255,255,0.05)'
+                              border: '1px solid rgba(255,255,255,0.05)',
+                              boxShadow: selectedIds.includes(device.id) ? '0 0 15px rgba(99, 102, 241, 0.3)' : 'none'
                             }}>
                               {device.type === 'terminal' ? <Smartphone size={18} color="#6366f1" /> : 
-                               device.type === 'esp32-speaker' ? <Cpu size={18} color="#10b981" /> : 
+                               device.type === 'esp32-speaker' || device.type === 'xiaozhi-speaker' ? <Cpu size={18} color="#10b981" /> : 
                                <Speaker size={18} color="#94a3b8" />}
                             </div>
                             <div>
-                              <p style={{ margin: 0, fontWeight: 600, color: '#f1f5f9', fontSize: '0.9rem' }}>
-                                {device.name}
-                                {device.type === 'esp32-speaker' && <span style={{ marginLeft: '8px', fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '1px 6px', borderRadius: '4px' }}>ESP32</span>}
-                              </p>
-                              {groupBy !== 'unit' && <p style={{ margin: '2px 0 0 0', fontSize: '0.7rem', color: '#64748b' }}>{device.unit_name || 'Đơn vị mặc định'}</p>}
+                               <p style={{ margin: 0, fontWeight: 700, color: '#f1f5f9', fontSize: '0.9rem' }}>
+                                 {device.name}
+                               </p>
+                               <p style={{ margin: '2px 0 0 0', fontSize: '0.7rem', color: '#64748b' }}>IP: {device.ip_address || '---'}</p>
                             </div>
                           </div>
 
                           <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <RadioIcon size={12} color={device.channel_id ? "#818cf8" : "#475569"} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <div style={{ padding: '4px', background: 'rgba(129, 140, 248, 0.1)', borderRadius: '6px' }}>
+                                <Building2 size={12} color="#818cf8" />
+                              </div>
                               <span style={{ 
                                 fontSize: '0.8rem', 
-                                color: device.channel_id ? '#818cf8' : '#475569',
-                                fontWeight: device.channel_id ? 700 : 400
+                                color: '#cbd5e1',
+                                fontWeight: 700
                               }}>
-                                {device.channel_name || 'Chưa gán'}
+                                {device.unit_name || 'Chưa gán'}
                               </span>
                             </div>
                           </div>
 
-                          <div style={{ flex: 0.8, fontFamily: 'monospace', color: '#94a3b8', fontSize: '0.8rem' }}>
-                            {device.ip_address || '---.---.---.---'}
-                          </div>
-
-                          <div style={{ flex: 0.8, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: getStatusColor(device.status) }} />
-                            <span style={{ fontSize: '0.8rem', color: '#cbd5e1', textTransform: 'capitalize' }}>{device.status}</span>
-                          </div>
-
-                          <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
-                            <button 
-                              onClick={() => openDeleteModal(device)}
-                              className="btn-icon-hover" 
-                              title="Xóa" 
-                              style={{ background: 'rgba(239, 68, 68, 0.05)', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '6px', borderRadius: '6px' }}
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <div style={{ flex: 1.2, display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8' }}>
+                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Signal size={10} /> Sóng</span>
+                                 <span style={{ fontWeight: 800, color: device.signal_strength < 40 ? '#f59e0b' : '#10b981' }}>{device.signal_strength || 0}%</span>
+                               </div>
+                               <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+                                  <div style={{ 
+                                    height: '100%', 
+                                    width: `${device.signal_strength || 0}%`, 
+                                    background: device.signal_strength < 40 ? 'linear-gradient(90deg, #f59e0b, #fbbf24)' : 'linear-gradient(90deg, #10b981, #34d399)',
+                                    boxShadow: '0 0 5px rgba(16, 185, 129, 0.3)'
+                                  }} />
+                               </div>
+                            </div>
                             
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1 }}>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: '#94a3b8' }}>
+                                 <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Volume2 size={10} /> Loa</span>
+                                 <span style={{ fontWeight: 800, color: '#6366f1' }}>{device.volume || 0}%</span>
+                               </div>
+                               <div style={{ height: '4px', width: '100%', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${device.volume || 0}%`, background: 'linear-gradient(90deg, #6366f1, #818cf8)' }} />
+                               </div>
+                            </div>
+                          </div>
+
+                          <div style={{ flex: 0.6, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div className={device.status === 'online' ? 'animate-pulse' : ''} style={{ width: '8px', height: '8px', borderRadius: '50%', background: getStatusColor(device.status), boxShadow: `0 0 10px ${getStatusColor(device.status)}` }} />
+                            <span style={{ fontSize: '0.8rem', color: '#cbd5e1', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{device.status}</span>
+                          </div>
+
+                          <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '6px', alignItems: 'center' }}>
+                            <button 
+                              onClick={() => setShowCommandModal(device)}
+                              className="btn-icon-hover" 
+                              title="Điều khiển C2" 
+                              style={{ 
+                                background: 'rgba(99, 102, 241, 0.1)', 
+                                border: '1px solid rgba(99, 102, 241, 0.2)', 
+                                color: '#818cf8', 
+                                cursor: 'pointer', 
+                                padding: '8px', 
+                                borderRadius: '8px'
+                              }}
+                            >
+                              <Settings2 size={16} />
+                            </button>
+
                             <div className="action-menu-container" style={{ position: 'relative' }}>
                               <button 
                                 onClick={() => setMenuOpenId(menuOpenId === device.id ? null : device.id)}
                                 className="btn-icon-hover" 
-                                title="Thao tác khác" 
                                 style={{ 
-                                  background: menuOpenId === device.id ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.03)', 
-                                  border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', borderRadius: '6px' 
+                                  background: 'rgba(255,255,255,0.05)', 
+                                  border: 'none', 
+                                  color: '#cbd5e1', 
+                                  cursor: 'pointer', 
+                                  padding: '8px', 
+                                  borderRadius: '8px' 
                                 }}
                               >
                                 <MoreVertical size={16} />
                               </button>
-                              
-                              {menuOpenId === device.id && (
-                                <div style={{
+                                {menuOpenId === device.id && (
+                                <div className="glass-card animate-fade-in" style={{
                                   position: 'absolute',
-                                  right: 0,
                                   top: '100%',
+                                  right: 0,
+                                  width: '180px',
                                   zIndex: 100,
-                                  minWidth: '140px',
-                                  background: '#0f172a',
+                                  padding: '8px',
+                                  marginTop: '8px',
+                                  background: 'rgba(15, 23, 42, 0.95)',
                                   border: '1px solid rgba(255,255,255,0.1)',
-                                  borderRadius: '10px',
-                                  padding: '4px',
-                                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.5)',
-                                  marginTop: '6px'
+                                  boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
                                 }}>
-                                  <button
-                                    style={{ 
-                                      width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '6px', 
-                                      display: 'flex', alignItems: 'center', gap: '8px', color: '#818cf8', 
-                                      background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem'
-                                    }}
-                                    onClick={() => { openEditModal(device); setMenuOpenId(null); }}
-                                  >
-                                    <Edit3 size={14} /> Chỉnh sửa
+                                  <button onClick={() => { openEditModal(device); setMenuOpenId(null); }} className="glass-btn-sidebar" style={{ justifyContent: 'flex-start', border: 'none', padding: '10px' }}>
+                                    <Edit3 size={14} /> Cấu hình
                                   </button>
-                                  <button
-                                    style={{ 
-                                      width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '6px', 
-                                      display: 'flex', alignItems: 'center', gap: '8px', color: '#94a3b8', 
-                                      background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem'
-                                    }}
-                                    onClick={() => { setMenuOpenId(null); }}
-                                  >
-                                    <Activity size={14} /> Kiểm tra
+                                  <button onClick={() => { openDeleteModal(device); setMenuOpenId(null); }} className="glass-btn-sidebar" style={{ justifyContent: 'flex-start', border: 'none', padding: '10px', color: '#ef4444' }}>
+                                    <Trash2 size={14} /> Gỡ bỏ
                                   </button>
                                 </div>
                               )}
@@ -852,8 +950,108 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
             ))
           )}
         </div>
-
       </section>
+
+      {/* C2 Command & Control Modal */}
+      {showCommandModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 1000,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem',
+          background: 'rgba(0,0,0,0.8)',
+          backdropFilter: 'blur(8px)'
+        }}>
+          <div className="animate-scale-up glass-card" style={{
+              width: '100%',
+              maxWidth: '600px',
+              padding: '2.5rem',
+              position: 'relative',
+              border: '1px solid rgba(255,255,255,0.1)'
+          }}>
+             <button 
+                onClick={() => setShowCommandModal(null)}
+                style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
+             >
+                <X size={24} />
+             </button>
+
+             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', marginBottom: '2rem' }}>
+                <div style={{ 
+                  width: '70px', height: '70px', borderRadius: '20px', 
+                  background: 'rgba(99, 102, 241, 0.1)', border: '2px solid rgba(99, 102, 241, 0.2)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                   <Settings2 size={35} color="#6366f1" />
+                </div>
+                <div>
+                   <h2 style={{ fontSize: '1.8rem', fontWeight: 800, margin: 0, color: '#f1f5f9' }}>{showCommandModal.name}</h2>
+                   <p style={{ margin: '5px 0 0 0', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: getStatusColor(showCommandModal.status) }} />
+                      Control Center (C2) - IP: {showCommandModal.ip_address}
+                   </p>
+                </div>
+             </div>
+
+             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+                {/* Health & Status */}
+                <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Tín hiệu hiện tại</span>
+                      <ShieldAlert size={16} color="#10b981" />
+                   </div>
+                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#10b981', marginBottom: '0.5rem' }}>{showCommandModal.signal_strength}%</div>
+                   <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Phiên bản: {showCommandModal.firmware_version}</div>
+                </div>
+
+                <div className="glass-card" style={{ padding: '1.5rem', background: 'rgba(255,255,255,0.02)' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.2rem' }}>
+                      <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Âm lượng (Master)</span>
+                      <Volume2 size={16} color="#6366f1" />
+                   </div>
+                   <div style={{ fontSize: '2rem', fontWeight: 800, color: '#6366f1', marginBottom: '1rem' }}>{showCommandModal.volume}%</div>
+                   <input 
+                      type="range" min="0" max="100" 
+                      value={showCommandModal.volume} 
+                      onChange={(e) => handleDeviceCommand(showCommandModal.id, 'SET_VOLUME', { volume: parseInt(e.target.value) })}
+                      style={{ width: '100%', cursor: 'pointer' }}
+                   />
+                </div>
+             </div>
+
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <h4 style={{ margin: 0, color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                   <Zap size={14} /> Lệnh chiến thuật
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                   <button 
+                      onClick={() => handleDeviceCommand(showCommandModal.id, 'REBOOT')}
+                      disabled={commandLoading}
+                      className="btn-secondary" 
+                      style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '0.9rem', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.2)' }}
+                   >
+                      <RefreshCw size={16} className={commandLoading ? 'animate-spin' : ''} />
+                      {commandLoading ? 'Đang thực thi...' : 'Khởi động lại'}
+                   </button>
+                   <button 
+                      onClick={() => {
+                        const notes = prompt('Nhập nội dung bảo trì:', showCommandModal.maintenance_notes || '');
+                        if (notes !== null) handleDeviceCommand(showCommandModal.id, 'MAINTENANCE_LOG', { notes });
+                      }}
+                      className="btn-secondary" 
+                      style={{ padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', fontSize: '0.9rem' }}
+                   >
+                      <History size={16} />
+                      Nhật ký bảo trì
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
 
       {/* CRUD Modals */}
       {showModal && (
@@ -876,7 +1074,10 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
               background: '#0f172a',
               border: '1px solid rgba(255,255,255,0.1)',
               borderRadius: '24px',
-              overflow: 'hidden',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
               boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)'
             }}
           >
@@ -971,33 +1172,77 @@ export default function DeviceManagement({ onLogout }: { onLogout?: () => void }
                     </div>
 
                     <div>
-                      <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.6rem' }}>Đơn vị quản lý</label>
-                      <select 
-                        required
-                        value={formData.unit_id}
-                        onChange={e => setFormData({ ...formData, unit_id: e.target.value })}
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: 'white', outline: 'none' }}
-                      >
-                        <option value="">-- Chọn đơn vị --</option>
-                        {units.map(unit => (
-                          <option key={unit.id} value={unit.id}>{unit.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                      <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.6rem' }}>ĐƠN VỊ QUẢN LÝ</label>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.8rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        {(() => {
+                          const userUnit = units.find(u => u.id === user?.unit_id);
+                          const userLevel = (userUnit?.level || 1);
+                          const isSystemAdmin = user?.role_id === 1 && user?.unit_id === 1;
 
-                    <div>
-                      <label style={{ display: 'block', color: '#94a3b8', fontSize: '0.9rem', marginBottom: '0.6rem' }}>Kênh kết nối (Phát sóng)</label>
-                      <select 
-                        required
-                        value={formData.channel_id}
-                        onChange={e => setFormData({ ...formData, channel_id: e.target.value })}
-                        style={{ width: '100%', padding: '12px 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#818cf8', fontWeight: 700, outline: 'none' }}
-                      >
-                        <option value="" style={{ color: '#94a3b8' }}>-- Chọn kênh phát --</option>
-                        {channels.map(ch => (
-                          <option key={ch.id} value={ch.id} style={{ color: 'black' }}>{ch.name}</option>
-                        ))}
-                      </select>
+                          return [
+                            { l: 1, n: 'Quân khu' }, { l: 2, n: 'Sư đoàn' },
+                            { l: 3, n: 'Trung đoàn' }, { l: 4, n: 'Tiểu đoàn' },
+                            { l: 5, n: 'Đại đội' }, { l: 6, n: 'Trung đội' }
+                          ].map((levelInfo) => {
+                            const currentVal = selectedLevels[levelInfo.l];
+                            const existingUnit = units.find(u => u.id === Number(currentVal));
+                            const displayVal = existingUnit ? existingUnit.name : String(currentVal || '');
+                            const suggestions = getUnitsByLevel(levelInfo.l, selectedLevels[levelInfo.l - 1])
+                              .filter(u => u.name.toLowerCase().includes(displayVal.toLowerCase()));
+
+                            // Lock logic: level is locked if it's < user's level (unless global admin)
+                            // Level 1 users can edit level 1. Level 4 users can edit level 4, 5, 6.
+                            const isLocked = !isSystemAdmin && levelInfo.l < userLevel;
+
+                            return (
+                              <div key={levelInfo.l} style={{ position: 'relative' }}>
+                                <label style={{ fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', display: 'block' }}>{levelInfo.n}</label>
+                                <input 
+                                  type="text"
+                                  className="premium-input"
+                                  style={{ 
+                                    width: '100%', 
+                                    padding: '10px 12px', 
+                                    borderRadius: '8px', 
+                                    background: isLocked ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.05)', 
+                                    border: isLocked ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0.1)', 
+                                    color: isLocked ? '#64748b' : 'white', 
+                                    outline: 'none', 
+                                    fontSize: '0.8rem',
+                                    opacity: isLocked ? 0.7 : 1,
+                                    cursor: isLocked ? 'not-allowed' : 'text',
+                                    fontWeight: isLocked ? 600 : 400
+                                  }}
+                                  placeholder={isLocked ? '' : `Tìm/thêm ${levelInfo.n}...`}
+                                  value={displayVal}
+                                  disabled={isLocked || (levelInfo.l > 1 && !selectedLevels[levelInfo.l - 1])}
+                                  onChange={(e) => !isLocked && handleLevelChange(levelInfo.l, e.target.value)}
+                                />
+                                {displayVal && !existingUnit && suggestions.length > 0 && !isLocked && (
+                                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', marginTop: '4px', maxHeight: '150px', overflowY: 'auto', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)' }}>
+                                    {suggestions.map(u => (
+                                      <div 
+                                        key={u.id}
+                                        style={{ padding: '8px 12px', fontSize: '0.8rem', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                                        onMouseDown={() => handleLevelChange(levelInfo.l, String(u.id))}
+                                      >
+                                        {u.name}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          });
+                        })()}
+                      </div>
+
+                      <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '6px' }}>
+                        {user.role_name === 'admin' && user.unit_id === 1 
+                          ? '* Quản trị viên có thể gán thiết bị ở mọi cấp.'
+                          : `* Thiết bị sẽ được gán cho đơn vị cuối cùng được chọn.`}
+                      </p>
                     </div>
                   </div>
                 </div>

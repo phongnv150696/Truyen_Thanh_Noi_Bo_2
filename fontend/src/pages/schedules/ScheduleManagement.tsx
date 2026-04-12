@@ -13,18 +13,18 @@ import {
   Layers,
   Check,
   Clock,
-  ShieldAlert,
   ChevronLeft,
   ChevronRight,
-  Music,
   User,
-  MoreVertical,
   X,
   Save,
-  Edit3
+  Edit3,
+  Pause,
+  Activity
 } from 'lucide-react';
+import { useNotification } from '../../components/NotificationProvider';
 
-const API_URL = `http://${window.location.hostname}:3000`;
+import { API_URL, WEBSOCKET_URL } from '../../config'
 
 interface ScheduleEntry {
   schedule_id: number;
@@ -35,6 +35,9 @@ interface ScheduleEntry {
   duration: string;
   repeat_pattern: string;
   is_active: boolean;
+  unit_id?: number | null;
+  unit_name?: string | null;
+  is_all_units?: boolean;
   triggered_at: string | null;
   play_status: 'played' | 'pending' | 'overdue';
 }
@@ -42,6 +45,7 @@ interface ScheduleEntry {
 interface GroupedContent {
   content_id: number | null;
   radio_id?: number | null;
+  routine_id?: number | null;
   content_title: string;
   author_name: string | null;
   has_audio: boolean;
@@ -63,6 +67,13 @@ interface ContentItem {
   author_name?: string;
 }
 
+interface Unit {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  level: number;
+}
+
 interface FlatSchedule {
   id: number;
   scheduled_time: string;
@@ -71,10 +82,15 @@ interface FlatSchedule {
   is_active: boolean;
   channel_id: number;
   channel_name: string;
+  unit_id?: number | null;
+  unit_name?: string | null;
+  is_all_units?: boolean;
   mount_point: string;
   content_id: number | null;
   radio_id?: number | null;
   radio_name?: string | null;
+  routine_id?: number | null;
+  routine_title?: string | null;
   content_title: string;
   author_name?: string;
   has_audio: boolean;
@@ -93,27 +109,36 @@ function ScheduleDetailPopup({
   onPlayNow,
   onStopBroadcast,
   activeBroadcast,
+  units,
+  devices,
+  user,
   isReadOnly = false,
   selectedDate = 'all'
 }: {
   item: GroupedContent;
   channels: Channel[];
   onClose: () => void;
-  onAddSlot: (contentId: number | null, channelId: number, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number) => Promise<void>;
-  onUpdateSlot: (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string, duration?: number) => Promise<void>;
+  onAddSlot: (contentId: number | null, channelId: number | null, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number, routineId?: number | null, unitId?: number | null, isAllUnits?: boolean) => Promise<void>;
+  onUpdateSlot: (scheduleId: number, channelId: number | null, scheduledTime: string, repeatPattern: string, duration?: number, unitId?: number | null, isAllUnits?: boolean) => Promise<void>;
   onDeleteSlot: (scheduleId: number) => Promise<void>;
   onPlayNow: (scheduleId: number) => Promise<void>;
   onStopBroadcast: () => void;
   activeBroadcast: any;
+  units: Unit[];
+  devices: any[];
+  user: any;
   isReadOnly?: boolean;
   selectedDate?: string;
 }) {
+  const [targetType, setTargetType] = useState<'channel' | 'unit' | 'all'>('unit');
   const [newChannelId, setNewChannelId] = useState(channels[0]?.id || 0);
+  const [newUnitId, setNewUnitId] = useState<number | string>(user?.unit_id || '');
   const [newTime, setNewTime] = useState('');
   const [newEndTime, setNewEndTime] = useState('');
   const [newRepeat, setNewRepeat] = useState('none');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const { showNotification } = useNotification();
 
   const extractTime = (iso: string) => {
     if (!iso) return '';
@@ -150,13 +175,15 @@ function ScheduleDetailPopup({
   };
 
   const handleSave = async () => {
-    if (!newTime || !newChannelId) return;
+    if (!newTime) return;
+    if (targetType === 'channel' && !newChannelId) return;
+    if (targetType === 'unit' && !newUnitId) return;
 
     // Check if time is in the past for today
     const now = new Date();
     const scheduledDateObj = new Date(newTime);
     if (scheduledDateObj < now) {
-      alert(`Không thể đặt lịch phát trong quá khứ (${scheduledDateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}). Vui lòng chọn giờ lớn hơn giờ hiện tại (${now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}).`);
+      showNotification('error', `Không thể đặt lịch phát trong quá khứ (${scheduledDateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}). Vui lòng chọn giờ lớn hơn giờ hiện tại (${now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}).`);
       return;
     }
 
@@ -169,7 +196,7 @@ function ScheduleDetailPopup({
         const end = new Date(datePart).setHours(h, m, 0, 0);
         
         if (end <= start) {
-          alert("Giờ kết thúc phải lớn hơn giờ bắt đầu.");
+          showNotification('info', "Giờ kết thúc phải lớn hơn giờ bắt đầu.");
           return;
         }
         duration = Math.floor((end - start) / 1000);
@@ -179,11 +206,15 @@ function ScheduleDetailPopup({
     }
 
     setSubmitting(true);
+    const channelId = targetType === 'channel' ? newChannelId : null;
+    const unitId = targetType === 'unit' ? Number(newUnitId) : (targetType === 'all' && user?.unit_id ? user.unit_id : null);
+    const isAllUnits = targetType === 'all';
+
     if (editingId) {
-      await onUpdateSlot(editingId, newChannelId, newTime, newRepeat, duration);
+      await onUpdateSlot(editingId, channelId, newTime, newRepeat, duration, unitId, isAllUnits);
       setEditingId(null);
     } else {
-      await onAddSlot(item.content_id, newChannelId, newTime, newRepeat, item.radio_id, duration);
+      await onAddSlot(item.content_id, channelId, newTime, newRepeat, item.radio_id, duration, item.routine_id, unitId, isAllUnits);
     }
     setNewTime('');
     setNewEndTime('');
@@ -192,7 +223,16 @@ function ScheduleDetailPopup({
 
   const startEdit = (s: ScheduleEntry) => {
     setEditingId(s.schedule_id);
-    setNewChannelId(s.channel_id);
+    if (s.channel_id) {
+       setTargetType('channel');
+       setNewChannelId(s.channel_id);
+    } else if (s.is_all_units) {
+       setTargetType('all');
+       setNewUnitId(s.unit_id || user?.unit_id || '');
+    } else {
+       setTargetType('unit');
+       setNewUnitId(s.unit_id || '');
+    }
     setNewRepeat(s.repeat_pattern);
     setNewTime(s.scheduled_time);
     if (s.duration) {
@@ -211,6 +251,8 @@ function ScheduleDetailPopup({
     setNewTime('');
     setNewEndTime('');
     setNewRepeat('none');
+    setTargetType('unit');
+    setNewUnitId(user?.unit_id || '');
     setNewChannelId(channels[0]?.id || 0);
   };
 
@@ -234,7 +276,7 @@ function ScheduleDetailPopup({
     : item.schedules).sort((a, b) => new Date(a.scheduled_time).getTime() - new Date(b.scheduled_time).getTime());
 
   for (const s of filteredSchedules) {
-    const key = s.channel_name || 'Kênh không xác định';
+    const key = s.channel_id ? (s.channel_name || 'Kênh không xác định') : (s.unit_name || (s.is_all_units ? 'Toàn đơn vị' : 'Đơn vị không xác định'));
     if (!byChannel[key]) byChannel[key] = [];
     byChannel[key].push(s);
   }
@@ -265,12 +307,42 @@ function ScheduleDetailPopup({
         {!isReadOnly && (
           <div style={{ padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: editingId ? 'rgba(245,158,11,0.03)' : 'rgba(99,102,241,0.03)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-              <div>
-                <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Kênh phát sóng</label>
-                <select value={newChannelId} onChange={e => setNewChannelId(parseInt(e.target.value))} className="premium-select" style={{ width: '100%', height: '42px' }}>
-                  {channels.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Chọn đơn vị</label>
+                <select 
+                  className="premium-select" 
+                  style={{ width: '100%', height: '42px' }}
+                  value={targetType === 'all' ? 'all' : String(newUnitId)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    if (val === 'all') {
+                      setTargetType('all');
+                      setNewUnitId(user?.unit_id || '');
+                    } else {
+                      setTargetType('unit');
+                      setNewUnitId(val);
+                    }
+                  }}
+                >
+                  <option value="">-- Chọn đơn vị --</option>
+                  {(user?.unit_id === 1 || user?.role_name?.toLowerCase() === 'admin' || user?.id === 1) && (
+                    <option value="all">TẤT CẢ ĐƠN VỊ (GLOBAL)</option>
+                  )}
+                  {units
+                    .filter((u: Unit) => {
+                      // Level 5+ and has hardware
+                      const hasLevel = u.level >= 5;
+                      const hasDevices = devices.some((d: any) => Number(d.unit_id) === Number(u.id));
+                      return hasLevel && hasDevices;
+                    })
+                    .map((u: Unit) => {
+                      const unitDeviceCount = devices.filter((d: any) => Number(d.unit_id) === Number(u.id)).length;
+                      return (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({unitDeviceCount} thiết bị)
+                        </option>
+                      );
+                    })}
                 </select>
-              </div>
               <div>
                 <label style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 700, display: 'block', marginBottom: '6px', textTransform: 'uppercase' }}>Tần suất lặp</label>
                 <select value={newRepeat} onChange={e => setNewRepeat(e.target.value)} className="premium-select" style={{ width: '100%', height: '42px' }}>
@@ -285,10 +357,10 @@ function ScheduleDetailPopup({
                   const time = e.target.value;
                   
                   // Use local timezone base date
+                  // Use local date instead of UTC ISO date to avoid being off by one day
                   let baseDate = selectedDate && selectedDate !== 'all' ? selectedDate : '';
                   if (!baseDate) {
-                     const now = new Date();
-                     baseDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                    baseDate = new Date().toLocaleDateString('en-CA');
                   }
 
                   try {
@@ -392,19 +464,29 @@ export default function ScheduleManagement({
   onLogout, 
   activeBroadcast, 
   onStopBroadcast, 
-  onStartBroadcast 
+  onStartBroadcast,
+  pendingRoutine,
+  onRoutineHandled,
+  user
 }: { 
   onLogout?: () => void;
   activeBroadcast?: any;
   onStopBroadcast?: () => void;
   onStartBroadcast?: (data: any) => void;
+  pendingRoutine?: { routineId: number, title: string } | null;
+  onRoutineHandled?: () => void;
+  user?: any;
 }) {
   const [groupedContents, setGroupedContents] = useState<GroupedContent[]>([]);
+  const { showNotification, confirm } = useNotification();
   const [channels, setChannels] = useState<Channel[]>([]);
+  const [radios, setRadios] = useState<any[]>([]);
+  const [devices, setDevices] = useState<any[]>([]);
   const [contents, setContents] = useState<ContentItem[]>([]);
+  const [routines, setRoutines] = useState<any[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isEmergencyActive, setIsEmergencyActive] = useState(false);
   const [processingId, setProcessingId] = useState<string | number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -415,23 +497,77 @@ export default function ScheduleManagement({
 
   // Create Schedule Modal state (for header button)
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [scheduleType, setScheduleType] = useState<'news' | 'radio' | 'routine'>('news');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newSchedule, setNewSchedule] = useState<any>({
-    channel_id: '',
+    unit_id: '',
+    is_all_units: false,
     content_id: '',
+    radio_id: '',
+    routine_id: '',
     scheduled_time: '',
     repeat_pattern: 'none',
     end_time: ''
   });
+  const [targetType, setTargetType] = useState<'unit' | 'all'>('unit');
   const [contentSearchQuery, setContentSearchQuery] = useState('');
   const [isContentListOpen, setIsContentListOpen] = useState(false);
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 7;
+  const itemsPerPage = 8;
 
-  // Menu state (⋮)
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  // Real-time clock and playback tracking
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [playPosition, setPlayPosition] = useState(0);
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '00:00';
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const handlePauseBroadcast = async (scheduleId: number) => {
+    try {
+      await fetch(`${API_URL}/schedules/${scheduleId}/pause`, { method: 'POST', headers: getHeaders() });
+    } catch (err) { console.error("Pause error", err); }
+  };
+
+  const handleResumeBroadcast = async (scheduleId: number) => {
+    try {
+      await fetch(`${API_URL}/schedules/${scheduleId}/resume`, { method: 'POST', headers: getHeaders() });
+    } catch (err) { console.error("Resume error", err); }
+  };
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Playback timer effect
+  useEffect(() => {
+    let interval: any = null;
+    
+    if (activeBroadcast && !activeBroadcast.isPaused) {
+      interval = setInterval(() => {
+        setPlayPosition(prev => prev + 1);
+      }, 1000);
+    } else {
+      if (interval) clearInterval(interval);
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [activeBroadcast?.schedule_id, activeBroadcast?.isPaused]);
+
+  // Reset play position when a new broadcast starts
+  useEffect(() => {
+    if (activeBroadcast) {
+      setPlayPosition(0);
+    }
+  }, [activeBroadcast?.schedule_id]);
 
   const getHeaders = () => {
     const token = localStorage.getItem('openclaw_token');
@@ -441,11 +577,14 @@ export default function ScheduleManagement({
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [schedRes, chanRes, contRes, emRes] = await Promise.all([
+      const [schedRes, chanRes, contRes, routRes, uRes, deviceRes, radioRes] = await Promise.all([
         fetch(`${API_URL}/schedules`, { headers: getHeaders() }),
         fetch(`${API_URL}/channels`, { headers: getHeaders() }),
         fetch(`${API_URL}/content?status=approved`, { headers: getHeaders() }),
-        fetch(`${API_URL}/schedules/emergency/status`, { headers: getHeaders() })
+        fetch(`${API_URL}/routines`, { headers: getHeaders() }),
+        fetch(`${API_URL}/users/units`, { headers: getHeaders() }),
+        fetch(`${API_URL}/devices`, { headers: getHeaders() }),
+        fetch(`${API_URL}/radios`, { headers: getHeaders() })
       ]);
 
       // Check schedule API response explicitly
@@ -465,7 +604,10 @@ export default function ScheduleManagement({
       const schedData = await schedRes.json();
       const chans = await chanRes.json();
       const conts = await contRes.json();
-      if (emRes.ok) { const em = await emRes.json(); setIsEmergencyActive(em.active); }
+      const routs = await routRes.json();
+      const unitData = await uRes.json();
+      const deviceData = await deviceRes.json();
+      const radioData = await radioRes.json();
 
       console.log('[Schedules] flat schedules count:', Array.isArray(schedData) ? schedData.length : 'NOT ARRAY', schedData);
 
@@ -478,14 +620,15 @@ export default function ScheduleManagement({
 
       const map = new Map<string, GroupedContent>();
       for (const s of flatList) {
-        const groupKey = s.content_id ? `c${s.content_id}` : `r${s.radio_id}`;
+        const groupKey = s.content_id ? `c${s.content_id}` : s.radio_id ? `r${s.radio_id}` : `o${s.routine_id}`;
         if (!map.has(groupKey)) {
           map.set(groupKey, {
             content_id: s.content_id,
             radio_id: s.radio_id,
-            content_title: s.radio_name ? `Radio: ${s.radio_name}` : (s.content_title || 'Nội dung không tên'),
+            routine_id: s.routine_id,
+            content_title: s.radio_name ? `Radio: ${s.radio_name}` : s.routine_title ? `Hiệu lệnh: ${s.routine_title}` : (s.content_title || 'Nội dung không tên'),
             author_name: s.author_name || null,
-            has_audio: s.has_audio,
+            has_audio: s.has_audio || !!s.routine_id,
             schedules: []
           });
         }
@@ -514,6 +657,10 @@ export default function ScheduleManagement({
       setGroupedContents(grouped);
       setChannels(Array.isArray(chans) ? chans : []);
       setContents(Array.isArray(conts) ? conts : []);
+      setRoutines(Array.isArray(routs) ? routs : []);
+      setUnits(Array.isArray(unitData) ? unitData : []);
+      setDevices(Array.isArray(deviceData) ? deviceData : []);
+      setRadios(Array.isArray(radioData) ? radioData : []);
     } catch (err) {
       console.error('[Schedules] Error:', err);
       setError('Lỗi kết nối đến máy chủ. Vui lòng thử lại.');
@@ -526,16 +673,35 @@ export default function ScheduleManagement({
   useEffect(() => {
     fetchData();
     const host = window.location.hostname || 'localhost';
-    const socket = new WebSocket(`ws://${host}:3000/ws`);
+    const socket = new WebSocket(WEBSOCKET_URL);
     socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'emergency_status_change') setIsEmergencyActive(data.active);
         if (data.type === 'broadcast-start') fetchData();
       } catch { }
     };
     return () => socket.close();
   }, []);
+
+  useEffect(() => {
+    if (pendingRoutine) {
+      console.log('[Schedules] Handling pending routine from prop:', pendingRoutine);
+      setScheduleType('routine');
+      setNewSchedule((prev: any) => ({ 
+        ...prev, 
+        routine_id: pendingRoutine.routineId,
+        unit_id: user?.unit_id || (units.length > 0 ? units[0].id.toString() : ''),
+        content_id: null,
+        radio_id: null,
+        scheduled_time: new Date().toISOString()
+      }));
+      setContentSearchQuery(pendingRoutine.title);
+      setIsModalOpen(true);
+      
+      // Notify parent that we've handled it
+      if (onRoutineHandled) onRoutineHandled();
+    }
+  }, [pendingRoutine, onRoutineHandled]);
 
   useEffect(() => { setCurrentPage(1); }, [searchTerm]);
 
@@ -543,7 +709,6 @@ export default function ScheduleManagement({
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      if (!target.closest('.schedule-action-menu')) setMenuOpenId(null);
       if (!target.closest('.content-search-container')) setIsContentListOpen(false);
     };
     document.addEventListener('mousedown', handler);
@@ -551,7 +716,7 @@ export default function ScheduleManagement({
   }, []);
 
   const handlePlayNow = async (scheduleId: number) => {
-    if (!confirm('Bạn có chắc chắn muốn phát khung giờ này ngay lập tức?')) return;
+    if (!(await confirm('Bạn có chắc chắn muốn phát khung giờ này ngay lập tức?'))) return;
     setProcessingId(scheduleId);
     try {
       const res = await fetch(`${API_URL}/schedules/${scheduleId}/play`, { method: 'POST', headers: getHeaders() });
@@ -561,59 +726,60 @@ export default function ScheduleManagement({
         if (onStartBroadcast && data.broadcast) {
            onStartBroadcast(data.broadcast);
         }
-        alert('Đã gửi lệnh phát sóng thành công!');
+        showNotification('success', 'Đã gửi lệnh phát sóng thành công!');
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
-        alert('Lỗi: ' + (e.error || 'Máy chủ phục vụ từ chối lệnh phát.'));
+        showNotification('error', `Lỗi (${res.status}): ${e.error || 'Máy chủ từ chối lệnh phát.'}`);
       }
     } catch (err) { 
       console.error('Play Now Error:', err);
-      alert('Lỗi kết nối máy chủ'); 
+      showNotification('error', 'Lỗi kết nối máy chủ'); 
     }
     finally { setProcessingId(null); }
   };
 
-  const handlePlayAllChannels = async (contentId: number | null, radioId?: number | null, title?: string) => {
-    if (!confirm('Bạn có chắc chắn muốn phát nội dung này trên TẤT CẢ các kênh có lịch trong hôm nay?')) return;
-    const groupKey = contentId ? `c${contentId}` : `r${radioId}`;
+  const handlePlayAllChannels = async (contentId: number | null, radioId?: number | null, routineId?: number | null, title?: string) => {
+    if (!(await confirm('Bạn có chắc chắn muốn phát nội dung này trên TẤT CẢ các kênh có lịch trong hôm nay?'))) return;
+    const groupKey = contentId ? `c${contentId}` : radioId ? `r${radioId}` : `o${routineId}`;
     if (!groupKey) return;
     setProcessingId(groupKey);
     try {
-      const url = contentId
-        ? `${API_URL}/schedules/content/${contentId}/play-all`
-        : `${API_URL}/schedules/radio/${radioId}/play-all`;
+      let url = '';
+      if (contentId) url = `${API_URL}/schedules/content/${contentId}/play-all`;
+      else if (radioId) url = `${API_URL}/schedules/radio/${radioId}/play-all`;
+      else if (routineId) url = `${API_URL}/schedules/routine/${routineId}/play-all`;
+
       const res = await fetch(url, {
         method: 'POST',
         headers: getHeaders()
       });
       if (res.ok) {
         const data = await res.json();
-        if (onStartBroadcast && data.channels && data.channels.length > 0) {
-          // Trigger a generic "All Channels" broadcast card
+        if (onStartBroadcast) {
           onStartBroadcast({
             title: title || 'Phát sóng đa kênh',
-            channel: `Đang phát trên ${data.channels.length} kênh`,
+            channel: data.message || 'Đang kích hoạt các kênh...',
             user: 'Hệ thống',
             content_id: contentId,
             radio_id: radioId
           });
         }
-        alert(data.message || 'Đã gửi lệnh phát sóng đa kênh thành công!');
+        showNotification('success', data.message || 'Đã gửi lệnh phát sóng đa kênh thành công!');
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
-        alert('Lỗi: ' + (e.error || 'Máy chủ phục vụ từ chối lệnh phát.'));
+        showNotification('error', `Lỗi (${res.status}): ${e.error || 'Máy chủ từ chối lệnh phát đa kênh.'}`);
       }
-    } catch { alert('Lỗi kết nối máy chủ'); }
+    } catch { showNotification('error', 'Lỗi kết nối máy chủ'); }
     finally { setProcessingId(null); }
   };
 
-  const handleDeleteContent = async (contentId: number | null, radioId?: number | null) => {
-    const groupKey = contentId ? `c${contentId}` : `r${radioId}`;
-    const item = groupedContents.find(g => (g.content_id ? `c${g.content_id}` : `r${g.radio_id}`) === groupKey);
+  const handleDeleteContent = async (contentId: number | null, radioId?: number | null, routineId?: number | null) => {
+    const groupKey = contentId ? `c${contentId}` : radioId ? `r${radioId}` : `o${routineId}`;
+    const item = groupedContents.find(g => (g.content_id ? `c${g.content_id}` : g.radio_id ? `r${g.radio_id}` : `o${g.routine_id}`) === groupKey);
     if (!item) return;
-    if (!confirm(`Xóa toàn bộ ${item.schedules.length} lịch phát của "${item.content_title}"?`)) return;
+    if (!(await confirm(`Xóa toàn bộ ${item.schedules.length} lịch phát của "${item.content_title}"?`))) return;
     try {
       const ids = item.schedules.map(s => s.schedule_id);
       await fetch(`${API_URL}/schedules/bulk-delete`, {
@@ -625,15 +791,18 @@ export default function ScheduleManagement({
     } catch { setError('Lỗi kết nối khi xóa.'); }
   };
 
-  const onAddSlot = async (contentId: number | null, channelId: number, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number) => {
+  const onAddSlot = async (contentId: number | null, channelId: number | null, scheduledTime: string, repeatPattern: string, radioId?: number | null, duration?: number, routineId?: number | null, unitId?: number | null, isAllUnits?: boolean) => {
     try {
       const res = await fetch(`${API_URL}/schedules`, {
         method: 'POST',
         headers: { ...getHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channel_id: channelId,
+          unit_id: unitId,
+          is_all_units: isAllUnits || false,
           content_id: contentId,
           radio_id: radioId,
+          routine_id: routineId,
           scheduled_time: scheduledTime,
           repeat_pattern: repeatPattern,
           duration: duration
@@ -653,13 +822,15 @@ export default function ScheduleManagement({
     }
   };
 
-  const onUpdateSlot = async (scheduleId: number, channelId: number, scheduledTime: string, repeatPattern: string, duration?: number) => {
+  const onUpdateSlot = async (scheduleId: number, channelId: number | null, scheduledTime: string, repeatPattern: string, duration?: number, unitId?: number | null, isAllUnits?: boolean) => {
     try {
       const res = await fetch(`${API_URL}/schedules/${scheduleId}`, {
         method: 'PATCH',
         headers: { ...getHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channel_id: channelId,
+          unit_id: unitId,
+          is_all_units: isAllUnits || false,
           scheduled_time: scheduledTime,
           repeat_pattern: repeatPattern,
           duration: duration
@@ -708,6 +879,9 @@ export default function ScheduleManagement({
         scheduled_time: s.scheduled_time,
         channel_id: s.channel_id,
         channel_name: s.channel_name || 'Kênh không xác định',
+        unit_id: s.unit_id,
+        unit_name: s.unit_name,
+        is_all_units: s.is_all_units,
         mount_point: s.mount_point || '',
         duration: s.duration || '',
         repeat_pattern: s.repeat_pattern || 'none',
@@ -721,7 +895,7 @@ export default function ScheduleManagement({
   };
 
   const onDeleteSlot = async (scheduleId: number) => {
-    if (!confirm('Xóa khung giờ phát này?')) return;
+    if (!(await confirm('Xóa khung giờ phát này?'))) return;
     try {
       await fetch(`${API_URL}/schedules/${scheduleId}`, { method: 'DELETE', headers: getHeaders() });
       await fetchData(); // Refresh main list
@@ -734,15 +908,6 @@ export default function ScheduleManagement({
     } catch { setError('Lỗi khi xóa khung giờ.'); }
   };
 
-  const handleEmergencyTrigger = async () => {
-    const action = isEmergencyActive ? 'dừng' : 'KÍCH HOẠT';
-    if (!confirm(isEmergencyActive ? `Xác nhận ${action} báo động?` : `CẢNH BÁO: Đang ${action} PHÁT BÁO ĐỘNG toàn hệ thống. Tiếp tục?`)) return;
-    const url = isEmergencyActive ? `${API_URL}/schedules/emergency/stop` : `${API_URL}/schedules/emergency`;
-    try {
-      const res = await fetch(url, { method: 'POST', headers: getHeaders() });
-      if (res.ok) { setIsEmergencyActive(!isEmergencyActive); fetchData(); }
-    } catch { }
-  };
 
   const handleCreateNew = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -773,7 +938,7 @@ export default function ScheduleManagement({
       });
       if (res.ok) {
         setIsModalOpen(false);
-        setNewSchedule({ channel_id: '', content_id: '', scheduled_time: '', repeat_pattern: 'none', end_time: '' });
+        setNewSchedule({ unit_id: '', content_id: '', scheduled_time: '', repeat_pattern: 'none', end_time: '' });
         fetchData();
       } else {
         const e = await res.json().catch(() => ({}));
@@ -783,11 +948,7 @@ export default function ScheduleManagement({
     finally { setIsSubmitting(false); }
   };
 
-  const getStatusColor = (status: string) => {
-    if (status === 'online') return '#10b981';
-    if (status === 'emergency') return '#ef4444';
-    return '#64748b';
-  };
+
 
   const isScheduledOnDate = (s: { scheduled_time: string, repeat_pattern: string }, targetDate: string) => {
     const sDate = s.scheduled_time.split('T')[0];
@@ -832,47 +993,133 @@ export default function ScheduleManagement({
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div className="animate-fade-in" style={{ width: '100%' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2.5rem' }}>
+      {/* Premium Clock with Date */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
         <div>
-          <h1 style={{ fontSize: '2.2rem', fontWeight: 800, margin: 0 }}>Lịch phát thanh</h1>
-          <p style={{ color: '#94a3b8', fontSize: '1.1rem', marginTop: '0.4rem' }}>Điều hành luồng phát thanh, lập lịch tiếp sóng và thông báo khẩn.</p>
+          <h1 style={{ fontSize: '2.5rem', fontWeight: 900, background: 'linear-gradient(to right, #f8fafc, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', margin: 0, letterSpacing: '-0.04em' }}>
+            Lập lịch Phát thanh
+          </h1>
+          <div style={{ color: '#64748b', fontSize: '1rem', marginTop: '6px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Calendar size={16} />
+            {currentTime.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={handleEmergencyTrigger}
-            className="btn-secondary"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'white', background: isEmergencyActive ? '#ef4444' : 'transparent', borderColor: isEmergencyActive ? '#ef4444' : 'rgba(239,68,68,0.2)', animation: isEmergencyActive ? 'pulse-red 1s infinite' : 'none' }}
-          >
-            <ShieldAlert size={18} color={isEmergencyActive ? 'white' : '#ef4444'} />
-            <span>{isEmergencyActive ? 'DỪNG BÁO ĐỘNG' : 'Phát Báo Động'}</span>
-          </button>
-          <style>{`@keyframes pulse-red { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,.7)} 70%{transform:scale(1.05);box-shadow:0 0 0 10px rgba(239,68,68,0)} 100%{transform:scale(1);box-shadow:0 0 0 0 rgba(239,68,68,0)} }`}</style>
+        <div style={{ textAlign: 'right', padding: '12px 28px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}>
+           <div style={{ fontSize: '2.8rem', fontWeight: 950, color: '#f8fafc', letterSpacing: '2px', textShadow: '0 0 25px rgba(99,102,241,0.4)', marginBottom: '-8px', lineHeight: 1 }}>
+              {currentTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
+           </div>
+           <span style={{ fontSize: '0.75rem', color: '#818cf8', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '4px' }}>Giờ chuẩn đơn vị</span>
         </div>
       </div>
 
-      {/* Channel Monitor */}
-      <h2 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '1.2rem' }}>Giám sát Kênh Truyền</h2>
-      <section className="stats-grid" style={{ marginBottom: '2.5rem' }}>
-        {channels.map(channel => (
-          <div key={channel.id} className="stat-card" style={{ padding: '1.5rem', background: channel.status === 'emergency' ? 'linear-gradient(135deg,rgba(239,68,68,0.1),rgba(255,255,255,0.03))' : 'rgba(255,255,255,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div style={{ width: '45px', height: '45px', background: channel.status === 'online' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
-                <Radio size={24} color={getStatusColor(channel.status)} />
-              </div>
-              <span style={{ padding: '4px 10px', borderRadius: '20px', fontSize: '0.65rem', fontWeight: 800, background: channel.status === 'online' ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.05)', color: getStatusColor(channel.status), textTransform: 'uppercase' }}>
-                {channel.status}
-              </span>
+      {/* Live Monitor Card (Enhanced) */}
+      {activeBroadcast ? (
+        <div className="glass-card animate-fade-in" style={{ 
+          marginBottom: '2.5rem', 
+          padding: '32px', 
+          border: '1px solid rgba(99,102,241,0.2)', 
+          background: 'linear-gradient(135deg, rgba(15,23,42,0.98), rgba(30,41,59,0.98))',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)',
+          position: 'relative',
+          overflow: 'hidden',
+          borderRadius: '30px'
+        }}>
+          {/* Animated Background Spectrum */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '60px', display: 'flex', alignItems: 'flex-end', gap: '3px', opacity: 0.15, padding: '0 20px' }}>
+             {Array.from({ length: 120 }).map((_, i) => (
+                <div key={i} style={{ flex: 1, background: '#6366f1', height: `${10 + Math.random() * 90}%`, animation: `pulse-live ${0.8 + Math.random()}s infinite alternate ease-in-out` }} />
+             ))}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+            <div style={{ display: 'flex', gap: '28px', alignItems: 'center' }}>
+               <div style={{ width: '72px', height: '72px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#818cf8', boxShadow: '0 0 20px rgba(99,102,241,0.2)' }}>
+                  <Activity size={36} className="animate-pulse" />
+               </div>
+               <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#ef4444', color: 'white', padding: '3px 12px', borderRadius: '30px', fontWeight: 900, fontSize: '0.75rem', animation: 'pulse-live 2s infinite' }}>
+                       <div style={{ width: '8px', height: '8px', background: 'white', borderRadius: '50%' }} /> TRỰC TIẾP
+                    </div>
+                    <span style={{ color: '#818cf8', fontSize: '0.9rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>Kênh: {activeBroadcast.channel}</span>
+                  </div>
+                  <h2 style={{ fontSize: '1.8rem', fontWeight: 900, color: '#f8fafc', margin: 0, letterSpacing: '-0.02em' }}>{activeBroadcast.title}</h2>
+                  <div style={{ fontSize: '0.95rem', color: '#94a3b8', marginTop: '6px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <User size={14} /> Phụ trách: <span style={{ fontWeight: 800, color: '#f1f5f9' }}>{activeBroadcast.user}</span>
+                    </div>
+                    {activeBroadcast.start_time && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(99,102,241,0.1)', padding: '3px 12px', borderRadius: '10px', border: '1px solid rgba(99,102,241,0.2)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={12} color="#818cf8" />
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f8fafc' }}>{new Date(activeBroadcast.start_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div style={{ width: '8px', height: '1px', background: 'rgba(255,255,255,0.2)' }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981' }}>
+                            {activeBroadcast.duration 
+                              ? new Date(new Date(activeBroadcast.start_time).getTime() + activeBroadcast.duration * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+                              : '--:--'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {activeBroadcast.file_size && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.05)', padding: '2px 8px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                        Dung lượng: <span style={{ fontWeight: 800, color: '#818cf8' }}>{activeBroadcast.file_size}</span>
+                      </div>
+                    )}
+                  </div>
+               </div>
             </div>
-            <div style={{ marginTop: '1.2rem' }}>
-              <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: '#f1f5f9' }}>{channel.name}</h4>
-              <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Layers size={14} /> {channel.mount_point}
-              </p>
+            <div style={{ display: 'flex', gap: '16px' }}>
+               {activeBroadcast.isPaused ? (
+                 <button onClick={() => handleResumeBroadcast(activeBroadcast.schedule_id)} className="btn-primary hover-scale" style={{ width: '56px', height: '56px', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', boxShadow: '0 10px 20px rgba(16,185,129,0.3)' }}>
+                    <Play size={28} fill="white" />
+                 </button>
+               ) : (
+                 <button onClick={() => handlePauseBroadcast(activeBroadcast.schedule_id)} className="btn-primary hover-scale" style={{ width: '56px', height: '56px', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #fbbf24, #d97706)', border: 'none', boxShadow: '0 10px 20px rgba(251,191,36,0.3)' }}>
+                    <Pause size={28} fill="white" />
+                 </button>
+               )}
+               <button onClick={onStopBroadcast} className="btn-primary hover-scale" style={{ width: '56px', height: '56px', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #ef4444, #dc2626)', border: 'none', boxShadow: '0 10px 20px rgba(239,68,68,0.3)' }}>
+                  <div style={{ width: '20px', height: '20px', background: 'white', borderRadius: '4px' }} />
+               </button>
             </div>
           </div>
-        ))}
-      </section>
+          
+          {/* Progress Bar Container */}
+          <div style={{ marginTop: '32px', position: 'relative', zIndex: 1 }}>
+             <div style={{ height: '8px', background: 'rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{ 
+                  height: '100%', 
+                  width: activeBroadcast.duration ? `${Math.min((playPosition / activeBroadcast.duration) * 100, 100)}%` : '0%', 
+                  background: 'linear-gradient(to right, #6366f1, #a855f7)',
+                  borderRadius: '10px',
+                  boxShadow: '0 0 15px rgba(99,102,241,0.5)',
+                  transition: 'width 1s linear'
+                }} />
+             </div>
+             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b', marginTop: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <span>{formatTime(playPosition)}</span>
+                <span style={{ color: '#818cf8', animation: 'pulse-live 1s infinite' }}>
+                   {activeBroadcast.isPaused ? 'ĐÃ TẠM DỪNG' : 'ĐANG TRUYỀN TÍN HIỆU...'}
+                </span>
+                <span>{activeBroadcast.duration ? formatTime(activeBroadcast.duration) : '--:--'}</span>
+             </div>
+          </div>
+        </div>
+      ) : (
+        <div className="glass-card animate-fade-in" style={{ marginBottom: '2.5rem', padding: '40px', textAlign: 'center', border: '2px dashed rgba(255,255,255,0.05)', background: 'rgba(255,255,255,0.01)', borderRadius: '30px' }}>
+           <div style={{ width: '64px', height: '64px', background: 'rgba(255,255,255,0.03)', borderRadius: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px', color: '#475569' }}>
+              <Radio size={32} />
+           </div>
+           <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f1f5f9', margin: 0 }}>Hệ thống sẵn sàng phát sóng</h3>
+           <p style={{ color: '#64748b', fontSize: '0.95rem', marginTop: '8px', maxWidth: '400px', margin: '8px auto 0' }}>Sẵn sàng nhận lệnh điều khiển. Chọn một bản tin từ danh sách phía dưới hoặc tạo lịch phát mới để bắt đầu.</p>
+        </div>
+      )}
+
+      {/* Channel Monitor section removed based on user request */}
 
       {/* Date Selector (Cinema Style) */}
       <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '1.5rem', marginBottom: '1rem', msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
@@ -897,8 +1144,8 @@ export default function ScheduleManagement({
             transform: selectedDate === 'all' ? 'translateY(-2px)' : 'none'
           }}
         >
-          <span style={{ fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase', opacity: selectedDate === 'all' ? 0.9 : 0.6 }}>Lịch</span>
-          <span style={{ fontSize: '1.1rem', fontWeight: 800 }}>TẤT CẢ</span>
+          <span style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', opacity: selectedDate === 'all' ? 0.9 : 0.6, letterSpacing: '1px', fontFamily: 'Outfit' }}>Lịch</span>
+          <span style={{ fontSize: '1.2rem', fontWeight: 900, fontFamily: 'Outfit', letterSpacing: '0.5px' }}>TẤT CẢ</span>
         </button>
 
         {Array.from({ length: 14 }, (_, i) => {
@@ -967,248 +1214,194 @@ export default function ScheduleManagement({
         </div>
       </div>
 
-      {/* Main table */}
-      <section className="section-container">
+      {/* Layout Grid Container */}
+      <section className="section-container" style={{ marginTop: '1rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.2rem' }}>
-          <span style={{ color: '#64748b', fontSize: '0.9rem' }}>
-            {searchTerm ? `Tìm thấy ${filtered.length} bản tin` : `${filtered.length} bản tin có lịch phát${selectedDate !== 'all' ? ' tương ứng' : ''}`}
+          <span style={{ color: '#64748b', fontSize: '0.9rem', fontWeight: 600 }}>
+             {searchTerm ? `Tìm thấy ${filtered.length} bản tin` : `${filtered.length} bản tin có lịch phát${selectedDate !== 'all' ? ' tương ứng' : ''}`}
           </span>
           <button
             onClick={() => {
               const now = new Date();
-              let baseDate = selectedDate === 'all' ? now.toISOString().split('T')[0] : selectedDate;
-              // If baseDate is UTC date from now.toISOString(), it might be yesterday if it's early morning locally.
-              // Use local date instead:
-              if (selectedDate === 'all') {
-                baseDate = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
-              }
+              let baseDate = selectedDate === 'all' ? now.toLocaleDateString('en-CA') : selectedDate;
+              if (selectedDate === 'all') baseDate = now.toLocaleDateString('en-CA');
               const pad = (n: number) => String(n).padStart(2, '0');
               const localTimeStr = `${baseDate}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
-              
               let utcIsoString = localTimeStr;
               try {
                 const dt = new Date(localTimeStr);
                 if (!isNaN(dt.getTime())) utcIsoString = dt.toISOString();
               } catch(e) {}
-
-              setNewSchedule({
-                channel_id: channels.length > 0 ? channels[0].id.toString() : '',
-                content_id: '',
-                scheduled_time: utcIsoString,
-                repeat_pattern: 'none'
+              setNewSchedule({ 
+                unit_id: user?.unit_id?.toString() || (units.length > 0 ? units[0].id.toString() : ''), 
+                content_id: '', 
+                scheduled_time: utcIsoString, 
+                repeat_pattern: 'none' 
               });
               setContentSearchQuery('');
               setIsContentListOpen(false);
               setIsModalOpen(true);
             }}
-            className="btn-primary"
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '10px' }}
+            className="btn-primary hover-scale"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '14px', background: 'linear-gradient(135deg, #6366f1, #4f46e5)', border: 'none', boxShadow: '0 4px 12px rgba(99,102,241,0.2)' }}
           >
-            <Plus size={18} />
-            <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>Thêm Nội dung phát</span>
+            <Plus size={20} />
+            <span style={{ fontSize: '0.95rem', fontWeight: 900, fontFamily: 'Outfit', letterSpacing: '0.5px' }}>LẬP LỊCH MỚI</span>
           </button>
         </div>
 
-        <div className="glass-card" style={{ padding: 0, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
-          {/* Table header */}
-          <div style={{ padding: '0.8rem 1.5rem', background: 'rgba(255,255,255,0.01)', display: 'flex', alignItems: 'center', color: '#475569', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '1px', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-            <span style={{ width: '60px' }}>ID</span>
-            <span style={{ flex: 2 }}>Tên bản tin</span>
-            <span style={{ flex: 1 }}>Tác giả</span>
-            <span style={{ width: '80px', textAlign: 'center' }}>Số lịch</span>
-            <span style={{ width: '120px', textAlign: 'right' }}>Thao tác</span>
+        {loading ? (
+          <div className="glass-card" style={{ padding: '6rem', textAlign: 'center', color: '#64748b', background: 'rgba(255,255,255,0.01)' }}>
+            <RefreshCw size={40} className="animate-spin" style={{ margin: '0 auto 1.5rem', color: '#6366f1', opacity: 0.6 }} />
+            <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>Đang đồng bộ dữ liệu hệ thống...</p>
           </div>
+        ) : filtered.length === 0 ? (
+          <div className="glass-card" style={{ padding: '6rem', textAlign: 'center', color: '#64748b', background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)' }}>
+            <Calendar size={60} style={{ opacity: 0.1, marginBottom: '1.5rem' }} />
+            <p style={{ fontWeight: 600, fontSize: '1.1rem' }}>Không tìm thấy lịch phát nào cho khung giờ này.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: '24px' }}>
+            {paginated.map((item) => {
+              const groupKey = item.content_id ? `c${item.content_id}` : item.radio_id ? `r${item.radio_id}` : `o${item.routine_id}`;
+              const dateToFilter = selectedDate !== 'all' ? selectedDate : null;
+              const relevantSchedules = dateToFilter ? item.schedules.filter(s => isScheduledOnDate(s, dateToFilter)) : item.schedules;
+              const playedCount = relevantSchedules.filter(s => s.play_status === 'played').length;
+              const pendingCount = relevantSchedules.filter(s => s.play_status === 'pending').length;
+              const isItemLive = activeBroadcast && (activeBroadcast.content_id === item.content_id || activeBroadcast.radio_id === item.radio_id || activeBroadcast.routine_id === item.routine_id);
 
-          {loading ? (
-            <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
-              <RefreshCw size={32} className="animate-spin" style={{ margin: '0 auto 1rem', opacity: 0.3 }} />
-              <p>Đang tải dữ liệu...</p>
-            </div>
-          ) : paginated.length === 0 ? (
-            <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
-              <Calendar size={48} style={{ opacity: 0.1, marginBottom: '1rem' }} />
-              <p>Không tìm thấy lịch phát nào.</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', paddingBottom: '120px', minHeight: '300px' }}>
-              {paginated.map((item, index) => {
-                const groupKey = item.content_id ? `c${item.content_id}` : `r${item.radio_id}`;
-                const dateToFilter = selectedDate !== 'all' ? selectedDate : null;
-                const relevantSchedules = dateToFilter
-                  ? item.schedules.filter(s => isScheduledOnDate(s, dateToFilter))
-                  : item.schedules;
-
-                const playedCount = relevantSchedules.filter(s => s.play_status === 'played').length;
-                const pendingCount = relevantSchedules.filter(s => s.play_status === 'pending').length;
-                const overdueCount = relevantSchedules.filter(s => s.play_status === 'overdue').length;
-                return (
-                  <div key={groupKey} className="table-row-hover" style={{ display: 'flex', alignItems: 'center', padding: '1rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.02)', transition: 'all 0.2s ease' }}>
-                    {/* ID */}
-                    <div style={{ width: '60px', color: '#64748b', fontSize: '0.85rem', fontWeight: 700 }}>
-                      #{item.content_id || item.radio_id}
-                    </div>
-                    {/* Tên bản tin */}
-                    <div style={{ flex: 2, paddingRight: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: '#f1f5f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }} title={item.content_title}>
-                          {item.content_title}
-                        </h4>
-                        {item.has_audio ? (
-                          <span style={{ flexShrink: 0, padding: '1px 6px', background: 'rgba(16,185,129,0.1)', borderRadius: '5px', color: '#10b981', fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <Music size={9} /> AUDIO
-                          </span>
-                        ) : (
-                          <span style={{ flexShrink: 0, padding: '1px 6px', background: 'rgba(239,68,68,0.1)', borderRadius: '5px', color: '#ef4444', fontSize: '0.65rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
-                            <AlertTriangle size={9} /> NO AUDIO
-                          </span>
-                        )}
-                      </div>
-                      {/* Mini schedule summary */}
-                      <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                        {playedCount > 0 && <span style={{ fontSize: '0.7rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '3px' }}><CheckCircle2 size={10} /> {playedCount} đã phát</span>}
-                        {pendingCount > 0 && <span style={{ fontSize: '0.7rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '3px' }}><Clock size={10} /> {pendingCount} chờ phát</span>}
-                        {overdueCount > 0 && <span style={{ fontSize: '0.7rem', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '3px' }}><XCircle size={10} /> {overdueCount} bỏ lỡ</span>}
-                      </div>
-                    </div>
-
-                    {/* Tác giả */}
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontSize: '0.85rem' }}>
-                      <User size={13} color="#475569" />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '130px' }}>
-                        {item.author_name || 'Không có'}
-                      </span>
-                    </div>
-
-                    {/* Số khung giờ - Interactive */}
-                    <div style={{ width: '80px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => { setViewingItem(item); setViewingDetailOnly(true); }}
-                        style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', padding: '4px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}
-                        title="Xem chi tiết lịch phát"
-                        onMouseOver={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.2)')}
-                        onMouseOut={e => (e.currentTarget.style.background = 'rgba(99,102,241,0.1)')}
-                      >
-                        {relevantSchedules.length}
-                      </button>
-                    </div>
-
-                    {/* Thao tác: ➕ 🗑 ⋮ */}
-                    <div style={{ width: '120px', display: 'flex', justifyContent: 'flex-end', gap: '8px', alignItems: 'center' }}>
-                      {/* ➕ Tạo lịch */}
-                      <button
-                        onClick={() => { setViewingItem(item); setViewingDetailOnly(false); }}
-                        title="Thêm khung giờ"
-                        style={{ background: 'rgba(16,185,129,0.1)', border: 'none', color: '#10b981', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
-                      >
-                        <Plus size={16} />
-                      </button>
-
-                      {/* 🗑 Xóa tất cả lịch phát */}
-                      <button
-                        onClick={() => handleDeleteContent(item.content_id, item.radio_id)}
-                        title="Xóa tất cả lịch phát"
-                        style={{ background: 'rgba(239,68,68,0.08)', border: 'none', color: '#ef4444', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s' }}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-
-                      {/* ⋮ Menu */}
-                      <div className="schedule-action-menu" style={{ position: 'relative' }}>
-                        <button
-                          onClick={() => {
-                            setMenuOpenId(menuOpenId === groupKey ? null : groupKey);
-                          }}
-                          style={{ background: menuOpenId === groupKey ? 'rgba(255,255,255,0.08)' : 'none', border: 'none', color: '#64748b', width: '34px', height: '34px', borderRadius: '9px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-                        >
-                          <MoreVertical size={16} />
+              return (
+                <div 
+                  key={groupKey} 
+                  className="glass-card animate-scale-in" 
+                  style={{ 
+                    padding: '24px', 
+                    border: isItemLive ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(255,255,255,0.06)',
+                    background: isItemLive ? 'linear-gradient(135deg, rgba(16,185,129,0.08), rgba(6,78,59,0.1))' : 'rgba(255,255,255,0.02)',
+                    display: 'flex', flexDirection: 'column', gap: '20px', borderRadius: '24px',
+                    boxShadow: isItemLive ? '0 15px 30px -10px rgba(16,185,129,0.2)' : '0 10px 25px -5px rgba(0,0,0,0.1)',
+                    transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                     <div style={{ flex: 1, paddingRight: '12px' }}>
+                       <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 900, marginBottom: '6px', letterSpacing: '1px' }}>#{item.content_id || item.radio_id || item.routine_id}</div>
+                       <h4 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 900, color: isItemLive ? '#10b981' : '#f8fafc', lineHeight: 1.3, letterSpacing: '-0.01em' }}>{item.content_title}</h4>
+                       
+                       {/* Next Scheduled Badge */}
+                       {pendingCount > 0 && relevantSchedules.find(s => s.play_status === 'pending') && (() => {
+                         const next = relevantSchedules.find(s => s.play_status === 'pending')!;
+                         const sTime = new Date(next.scheduled_time);
+                         const duration = next.duration ? parseInt(next.duration.toString()) : 0;
+                         const eTime = duration > 0 ? new Date(sTime.getTime() + duration * 1000) : null;
+                         
+                         return (
+                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(251,191,36,0.1)', color: '#fbbf24', padding: '2px 8px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800, marginTop: '8px' }}>
+                              <Clock size={10} /> Sắp tới: {sTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                              {eTime && (
+                                <>
+                                  <span style={{ opacity: 0.5 }}>-</span>
+                                  <span>{eTime.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+                                </>
+                              )}
+                           </div>
+                         );
+                       })()}
+                     </div>
+                     {isItemLive ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ef4444', color: 'white', padding: '4px 12px', borderRadius: '30px', fontSize: '0.7rem', fontWeight: 950, animation: 'pulse-live 1.5s infinite' }}>
+                          <div style={{ width: '8px', height: '8px', background: 'white', borderRadius: '50%' }} /> TRỰC TIẾP
+                        </div>
+                     ) : (
+                        <button onClick={() => handleDeleteContent(item.content_id, item.radio_id, item.routine_id)} title="Xóa tất cả lịch" style={{ background: 'none', border: 'none', color: '#475569', cursor: 'pointer', padding: '4px', borderRadius: '8px', transition: 'all 0.2s' }} onMouseOver={e => e.currentTarget.style.color = '#ef4444'}>
+                           <Trash2 size={16} />
                         </button>
-                        {menuOpenId === groupKey && (
-                            <div className="animate-fade-in" style={{ 
-                              position: 'absolute', 
-                              right: 0, 
-                              ...(index >= Math.max(0, paginated.length - 2) && paginated.length > 3 ? { bottom: '100%', marginBottom: '6px' } : { top: '100%', marginTop: '6px' }),
-                              width: '160px', 
-                              background: 'rgba(15,23,42,0.97)', 
-                              backdropFilter: 'blur(20px)', 
-                              border: '1px solid rgba(255,255,255,0.08)', 
-                              borderRadius: '12px', 
-                              padding: '6px', 
-                              zIndex: 50, 
-                              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)' 
-                            }}>
-                              <button
-                                onClick={() => { setMenuOpenId(null); setViewingItem(item); setViewingDetailOnly(false); }}
-                                style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: '#818cf8', cursor: 'pointer', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
-                              >
-                                <Plus size={14} />
-                                <span>Sửa lịch phát</span>
-                              </button>
-                            {activeBroadcast && (activeBroadcast.content_id === item.content_id || activeBroadcast.radio_id === item.radio_id) ? (
-                              <button
-                                onClick={() => {
-                                  setMenuOpenId(null);
-                                  onStopBroadcast?.();
-                                }}
-                                style={{ width: '100%', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: '12px', background: 'rgba(239,68,68,0.1)', border: 'none', color: '#ef4444', cursor: 'pointer', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 800, textAlign: 'left' }}
-                              >
-                                <div style={{ display: 'flex', gap: '2px' }}>
-                                  <div style={{ width: '3.5px', height: '14px', background: '#ef4444', borderRadius: '1px' }} />
-                                  <div style={{ width: '3.5px', height: '14px', background: '#ef4444', borderRadius: '1px' }} />
-                                </div>
-                                <span style={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>Dừng phát toàn bộ</span>
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => {
-                                  setMenuOpenId(null);
-                                  if (!item.has_audio) {
-                                    alert('Bản tin này hiện chưa được gán file âm thanh, không thể phát đa kênh. Vui lòng cập nhật âm thanh trước.');
-                                    return;
-                                  }
-                                  handlePlayAllChannels(item.content_id, item.radio_id, item.content_title);
-                                }}
-                                style={{ width: '100%', padding: '9px 12px', display: 'flex', alignItems: 'center', gap: '10px', background: 'none', border: 'none', color: item.has_audio ? '#10b981' : '#475569', cursor: item.has_audio ? 'pointer' : 'not-allowed', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600, textAlign: 'left' }}
-                              >
-                                {processingId === groupKey ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
-                                <span>Phát ngay (Tất cả kênh)</span>
-                              </button>
-                            )}
-                            </div>
-                        )}
-                      </div>
-                    </div>
+                     )}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
 
-        {/* Pagination */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#94a3b8', fontSize: '0.85rem' }}>
+                        <div style={{ width: '30px', height: '30px', background: 'rgba(255,255,255,0.04)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.05)' }}>
+                           <User size={14} />
+                        </div>
+                        <span style={{ fontWeight: 600 }}>{item.author_name || 'Hệ thống'}</span>
+                     </div>
+                     <span style={{ padding: '3px 10px', background: item.has_audio ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', borderRadius: '10px', color: item.has_audio ? '#10b981' : '#ef4444', fontSize: '0.7rem', fontWeight: 900, letterSpacing: '0.5px' }}>
+                        {item.has_audio ? 'CÓ ÂM THANH' : 'CHƯA CÓ FILE'}
+                     </span>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '0 -10px' }} />
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div style={{ display: 'flex', gap: '16px' }}>
+                        <div style={{ textAlign: 'center' }}>
+                           <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#10b981' }}>{playedCount}</div>
+                           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Đã phát</div>
+                        </div>
+                        <div style={{ width: '1px', height: '28px', background: 'rgba(255,255,255,0.08)' }} />
+                        <div style={{ textAlign: 'center' }}>
+                           <div style={{ fontSize: '1.1rem', fontWeight: 900, color: '#fbbf24' }}>{pendingCount}</div>
+                           <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Chờ phát</div>
+                        </div>
+                     </div>
+
+                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {isItemLive ? (
+                          <>
+                            {activeBroadcast.isPaused ? (
+                              <button onClick={() => handleResumeBroadcast(activeBroadcast.schedule_id)} title="Tiếp tục" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={18} fill="#10b981" /></button>
+                            ) : (
+                              <button onClick={() => handlePauseBroadcast(activeBroadcast.schedule_id)} title="Tạm dừng" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Pause size={18} fill="#fbbf24" /></button>
+                            )}
+                            <button onClick={onStopBroadcast} title="Dừng phát" style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div style={{ width: '14px', height: '14px', background: '#ef4444', borderRadius: '2px' }} /></button>
+                          </>
+                        ) : (
+                          item.has_audio && (
+                            <button onClick={() => handlePlayAllChannels(item.content_id, item.radio_id, item.routine_id, item.content_title)} disabled={processingId === groupKey} className="btn-primary hover-scale" style={{ padding: '8px 18px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 800, border: 'none', background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}>
+                              {processingId === groupKey ? <RefreshCw size={14} className="animate-spin" /> : 'PHÁT NGAY'}
+                            </button>
+                          )
+                        )}
+                        <button onClick={() => { setViewingItem(item); setViewingDetailOnly(false); }} className="btn-secondary" style={{ width: '38px', height: '38px', borderRadius: '12px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                           <Calendar size={18} />
+                        </button>
+                     </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '2rem', gap: '12px' }}>
-            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: currentPage === 1 ? '#475569' : '#cbd5e1', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronLeft size={20} />
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: '3rem', gap: '12px' }}>
+            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: currentPage === 1 ? '#475569' : '#cbd5e1', cursor: currentPage === 1 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={22} />
             </button>
             <div style={{ display: 'flex', gap: '8px' }}>
               {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                <button key={page} onClick={() => setCurrentPage(page)} style={{ width: '38px', height: '38px', borderRadius: '10px', background: currentPage === page ? '#6366f1' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: 'white', fontWeight: 600, cursor: 'pointer' }}>
+                <button key={page} onClick={() => setCurrentPage(page)} style={{ width: '42px', height: '42px', borderRadius: '12px', background: currentPage === page ? '#6366f1' : 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, cursor: 'pointer', transition: 'all 0.2s' }}>
                   {page}
                 </button>
               ))}
             </div>
-            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} style={{ width: '38px', height: '38px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: currentPage === totalPages ? '#475569' : '#cbd5e1', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ChevronRight size={20} />
+            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)} style={{ width: '42px', height: '42px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: currentPage === totalPages ? '#475569' : '#cbd5e1', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronRight size={22} />
             </button>
           </div>
         )}
       </section>
 
-      {/* Detail Popup 👁 */}
+      {/* Popups & Modals */}
       {viewingItem && (
         <ScheduleDetailPopup
-          item={viewingItem}
+          item={viewingItem as GroupedContent}
           channels={channels}
+          units={units}
+          devices={devices}
+          user={user}
           onClose={() => setViewingItem(null)}
           onAddSlot={onAddSlot}
           onUpdateSlot={onUpdateSlot}
@@ -1239,60 +1432,154 @@ export default function ScheduleManagement({
               </div>
             )}
             <form onSubmit={handleCreateNew}>
-              {/* Channel is hidden, default to channels[0] */}
-              <div className="premium-form-group content-search-container" style={{ position: 'relative' }}>
-                <label className="premium-label"><Layers size={14} /> Bản tin nội dung</label>
-                <div style={{ position: 'relative' }}>
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem', background: 'rgba(255,255,255,0.03)', padding: '6px', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <button type="button" onClick={() => setScheduleType('news')} className={scheduleType === 'news' ? 'btn-primary' : 'btn-secondary'} style={{ flex: 1, padding: '8px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700 }}>Bản tin</button>
+                <button type="button" onClick={() => setScheduleType('radio')} className={scheduleType === 'radio' ? 'btn-primary' : 'btn-secondary'} style={{ flex: 1, padding: '8px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700 }}>Radio</button>
+                <button type="button" onClick={() => setScheduleType('routine')} className={scheduleType === 'routine' ? 'btn-primary' : 'btn-secondary'} style={{ flex: 1, padding: '8px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700 }}>Hiệu lệnh</button>
+              </div>
+
+              <div className="premium-form-group">
+                <label className="premium-label"><Activity size={14} /> Phạm vi phát sóng</label>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+                  <button 
+                    type="button" 
+                    onClick={() => { 
+                      setTargetType('all'); 
+                      const isAdmin = user?.unit_id === 1 || user?.role_name?.toLowerCase() === 'admin' || user?.id === 1;
+                      setNewSchedule({
+                        ...newSchedule, 
+                        is_all_units: isAdmin, 
+                        unit_id: isAdmin ? '' : user.unit_id.toString()
+                      }); 
+                    }} 
+                    className={targetType === 'all' ? 'btn-primary' : 'btn-secondary'} 
+                    style={{ flex: 1, padding: '10px', borderRadius: '12px', fontSize: '0.8rem', border: targetType === 'all' ? 'none' : '1px solid rgba(255,255,255,0.05)' }}
+                  >
+                    Tất cả đơn vị
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => { setTargetType('unit'); setNewSchedule({...newSchedule, is_all_units: false}); }} 
+                    className={targetType === 'unit' ? 'btn-primary' : 'btn-secondary'} 
+                    style={{ flex: 1, padding: '10px', borderRadius: '12px', fontSize: '0.8rem', border: targetType === 'unit' ? 'none' : '1px solid rgba(255,255,255,0.05)' }}
+                  >
+                    Từng đơn vị
+                  </button>
+                </div>
+              </div>
+
+              {targetType === 'unit' && (
+                <div className="premium-form-group">
+                  <label className="premium-label">Chọn Đơn vị</label>
+                  <select 
+                    className="premium-select" 
+                    value={String(newSchedule.unit_id)} 
+                    onChange={e => setNewSchedule({...newSchedule, unit_id: e.target.value})}
+                  >
+                    <option value="">-- Chọn đơn vị --</option>
+                    {units
+                      .filter(u => {
+                        // 1. Must be Level 5 (Company) or Level 6 (Platoon)
+                        const hasLevel = u.level >= 5;
+                        // 2. Must have at least one device
+                        const hasDevices = devices.some(d => Number(d.unit_id) === Number(u.id));
+                        return hasLevel && hasDevices;
+                      })
+                      .map(u => {
+                        const unitDeviceCount = devices.filter(d => Number(d.unit_id) === Number(u.id)).length;
+                        return (
+                          <option key={u.id} value={u.id}>
+                            {u.name} ({unitDeviceCount} thiết bị)
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
+
+
+
+              {scheduleType === 'news' && (
+                <div className="premium-form-group content-search-container" style={{ position: 'relative' }}>
+                  <label className="premium-label"><Layers size={14} /> Chọn Bản tin</label>
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      type="text"
+                      className="premium-input"
+                      placeholder="Tìm kiếm bản tin..."
+                      value={contentSearchQuery || (contents.find(c => c.id === parseInt(newSchedule.content_id))?.title || '')}
+                      onFocus={() => { setContentSearchQuery(''); setIsContentListOpen(true); }}
+                      onChange={e => { setContentSearchQuery(e.target.value); setIsContentListOpen(true); }}
+                      style={{ paddingRight: '40px' }}
+                    />
+                    <Search size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
+                    {isContentListOpen && (
+                      <div className="glass-card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '5px', maxHeight: '200px', overflowY: 'auto', zIndex: 100, padding: '5px' }}>
+                        {availableContents.map(c => (
+                          <div key={c.id} onClick={() => { setNewSchedule({ ...newSchedule, content_id: c.id, radio_id: null, routine_id: null }); setContentSearchQuery(c.title); setIsContentListOpen(false); }} className="table-row-hover" style={{ padding: '10px 15px', borderRadius: '10px', cursor: 'pointer' }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 700 }}>{c.title}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {scheduleType === 'radio' && (
+                <div className="premium-form-group">
+                  <label className="premium-label"><Radio size={14} /> Chọn Đài Phát</label>
+                  <select 
+                    className="premium-select" 
+                    value={newSchedule.radio_id || ''} 
+                    onChange={e => {
+                      const rId = e.target.value;
+                      const rad = radios.find(r => r.id === parseInt(rId));
+                      setNewSchedule({ ...newSchedule, radio_id: rId, content_id: null, routine_id: null });
+                      setContentSearchQuery(rad?.name || '');
+                    }}
+                  >
+                    <option value="">-- Chọn đài phát --</option>
+                    {radios.map(r => (
+                      <option key={r.id} value={r.id}>{r.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {scheduleType === 'routine' && (
+                <div className="premium-form-group">
+                  <label className="premium-label"><Clock size={14} /> Chọn Hiệu lệnh</label>
+                  <select 
+                    className="premium-select" 
+                    value={newSchedule.routine_id || ''} 
+                    onChange={e => {
+                      const rId = e.target.value;
+                      const rout = routines.find(r => r.id === parseInt(rId));
+                      setNewSchedule({ ...newSchedule, routine_id: rId, content_id: null, radio_id: null });
+                      setContentSearchQuery(rout?.title || '');
+                    }}
+                  >
+                    <option value="">-- Chọn hiệu lệnh --</option>
+                    {routines.map(r => (
+                      <option key={r.id} value={r.id}>{r.title} {r.file_path ? '(Sẵn sàng)' : '(Chưa có file)'}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {scheduleType === 'news' && (
+                <div className="premium-form-group">
+                  <label className="premium-label"><User size={14} /> Tác giả bản tin</label>
                   <input
                     type="text"
                     className="premium-input"
-                    placeholder="Tìm kiếm bản tin hoặc tác giả..."
-                    value={contentSearchQuery || (contents.find(c => c.id === parseInt(newSchedule.content_id))?.title || '')}
-                    onFocus={() => { setContentSearchQuery(''); setIsContentListOpen(true); }}
-                    onChange={e => { setContentSearchQuery(e.target.value); setIsContentListOpen(true); }}
-                    style={{ paddingRight: '40px' }}
+                    readOnly
+                    style={{ background: 'rgba(0,0,0,0.1)', cursor: 'default' }}
+                    value={contents.find(c => c.id === parseInt(newSchedule.content_id))?.author_name || 'Chưa chọn bản tin'}
                   />
-                  <Search size={16} style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', opacity: 0.5 }} />
-                  
-                  {isContentListOpen && (
-                    <div className="glass-card" style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: '5px', maxHeight: '250px', overflowY: 'auto', zIndex: 100, padding: '5px', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                      {availableContents.length === 0 ? (
-                        <div style={{ padding: '15px', textAlign: 'center', color: '#64748b', fontSize: '0.9rem' }}>
-                          {contentSearchQuery ? 'Không tìm thấy kết quả phù hợp' : 'Tất cả các bản tin hôm nay đều đã có lịch'}
-                        </div>
-                      ) : (
-                        availableContents.map(c => (
-                          <div
-                            key={c.id}
-                            onClick={() => {
-                              setNewSchedule({ ...newSchedule, content_id: c.id });
-                              setContentSearchQuery(c.title);
-                              setIsContentListOpen(false);
-                            }}
-                            className="table-row-hover"
-                            style={{ padding: '10px 15px', borderRadius: '10px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.02)' }}
-                          >
-                            <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#f1f5f9' }}>{c.title}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <User size={10} /> {c.author_name || 'Không có tác giả'}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
                 </div>
-              </div>
-              <div className="premium-form-group">
-                <label className="premium-label"><User size={14} /> Tác giả bản tin</label>
-                <input
-                  type="text"
-                  className="premium-input"
-                  readOnly
-                  style={{ background: 'rgba(0,0,0,0.1)', cursor: 'default' }}
-                  value={contents.find(c => c.id === parseInt(newSchedule.content_id))?.author_name || 'Chưa chọn bản tin'}
-                />
-              </div>
+              )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '2rem' }}>
                 <div className="premium-form-group" style={{ marginBottom: 0 }}>
                   <label className="premium-label"><Clock size={14} /> Giờ phát</label>
@@ -1303,8 +1590,9 @@ export default function ScheduleManagement({
                     value={newSchedule.scheduled_time ? (new Date(newSchedule.scheduled_time).getHours().toString().padStart(2, '0') + ':' + new Date(newSchedule.scheduled_time).getMinutes().toString().padStart(2, '0')) : ''}
                     onChange={e => {
                       const time = e.target.value;
-                      const baseDate = selectedDate === 'all' ? new Date().toISOString().split('T')[0] : selectedDate;
-                      setNewSchedule({ ...newSchedule, scheduled_time: `${baseDate}T${time}:00` });
+                      const baseDate = selectedDate === 'all' ? new Date().toLocaleDateString('en-CA') : selectedDate;
+                      const localDateObj = new Date(`${baseDate}T${time}:00`);
+                      setNewSchedule({ ...newSchedule, scheduled_time: localDateObj.toISOString() });
                     }}
                   />
                 </div>

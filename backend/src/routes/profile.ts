@@ -8,7 +8,7 @@ export default async function profileRoutes(fastify: FastifyInstance) {
     const userId = request.user.id;
     const query = `
       SELECT 
-        u.id, u.username, u.full_name, u.rank, u.position, u.email, u.created_at, u.updated_at,
+        u.id, u.username, u.full_name, u.rank, u.position, u.email, u.unit_id, u.created_at, u.updated_at,
         r.name as role_name,
         un.name as unit_name
       FROM users u
@@ -27,9 +27,13 @@ export default async function profileRoutes(fastify: FastifyInstance) {
   // 2. Update profile information
   fastify.patch('/me', { preHandler: [fastify.authenticate] }, async (request: any, reply) => {
     const userId = request.user.id;
-    const { full_name, rank, position, email } = request.body as any;
+    const { full_name, rank, position, email, unit_id, parent_unit_id } = request.body as any;
 
     try {
+      const { resolveUnitId } = await import('../utils/unit_resolver.js');
+      const effectiveParentId = parent_unit_id ? parseInt(parent_unit_id) : request.user.unit_id;
+      const targetUnitId = unit_id ? await resolveUnitId(fastify.pg, unit_id, effectiveParentId, request.user.role_name === 'admin') : null;
+
       const query = `
         UPDATE users 
         SET 
@@ -37,17 +41,18 @@ export default async function profileRoutes(fastify: FastifyInstance) {
           rank = COALESCE($2, rank), 
           position = COALESCE($3, position),
           email = COALESCE($4, email),
+          unit_id = COALESCE($5, unit_id),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $5
-        RETURNING id, username, full_name, rank, position, email
+        WHERE id = $6
+        RETURNING id, username, full_name, rank, position, email, unit_id
       `;
-      const result = await fastify.pg.query(query, [full_name, rank, position, email, userId]);
+      const result = await fastify.pg.query(query, [full_name, rank, position, email, targetUnitId, userId]);
       
       // Log action
       await fastify.pg.query(`
         INSERT INTO audit_logs (user_id, action, target_table, details)
         VALUES ($1, 'PROFILE_UPDATED', 'users', $2)
-      `, [userId, JSON.stringify({ full_name, rank, position, email })]);
+      `, [userId, JSON.stringify({ full_name, rank, position, email, unit_id: targetUnitId })]);
 
       return result.rows[0];
     } catch (err) {

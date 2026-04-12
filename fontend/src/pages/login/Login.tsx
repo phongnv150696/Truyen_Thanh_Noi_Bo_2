@@ -4,7 +4,7 @@ import axios from 'axios'
 import { useNavigate, Link } from 'react-router-dom'
 import './loginCSS.css'
 
-const API_BASE_URL = `http://${window.location.hostname}:3000`;
+import { API_BASE_URL } from '../../config'
 
 export default function Login({ onLoginSuccess }: { onLoginSuccess: (user: any) => void }) {
   const [username, setUsername] = useState('')
@@ -39,17 +39,14 @@ export default function Login({ onLoginSuccess }: { onLoginSuccess: (user: any) 
     <div className="animate-fade-in" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
       <div className="glass-card" style={{ width: '400px' }}>
         <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
-          <div style={{
-            display: 'inline-flex',
-            padding: '1rem',
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(99,102,241,0.2), rgba(168,85,247,0.2))',
+          <img src="/logo.png" alt="Logo" style={{ 
+            width: '100px', 
+            height: '100px', 
+            objectFit: 'contain',
             marginBottom: '1rem'
-          }}>
-            <Radio size={40} className="text-primary" color="#6366f1" />
-          </div>
-          <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 700 }}>OpenClaw</h1>
-          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>Truyền Thanh Nội Bộ V2</p>
+          }} className="ani-pulse" />
+          <h1 style={{ margin: 0, fontSize: '1.8rem', fontWeight: 900, color: 'white' }}>TRUYỀN THANH NỘI BỘ</h1>
+          <p style={{ color: 'var(--text-muted)', marginTop: '0.5rem', fontWeight: 600 }}>Hệ thống Quản lý & Điều hành Phát thanh</p>
         </div>
 
         {error && (

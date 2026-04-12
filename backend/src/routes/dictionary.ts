@@ -14,7 +14,7 @@ export default async function dictionaryRoutes(fastify: FastifyInstance, options
   });
 
   // 2. Add new dictionary entry
-  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor'])] }, async (request: any, reply) => {
+  fastify.post('/', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, async (request: any, reply) => {
     const { word, phonetic_reading, category } = request.body;
     const client = await fastify.pg.connect();
     try {
@@ -29,7 +29,7 @@ export default async function dictionaryRoutes(fastify: FastifyInstance, options
   });
 
   // 3. Update dictionary entry
-  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor'])] }, async (request: any, reply) => {
+  fastify.put('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const { word, phonetic_reading, category } = request.body;
     const client = await fastify.pg.connect();
@@ -48,7 +48,7 @@ export default async function dictionaryRoutes(fastify: FastifyInstance, options
   });
 
   // 4. Delete dictionary entry
-  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['admin', 'editor'])] }, async (request: any, reply) => {
+  fastify.delete('/:id', { preHandler: [fastify.authenticate, fastify.authorize(['Admin', 'Quản trị viên', 'Quản lý', 'operations_commander', 'political_commissar'])] }, async (request: any, reply) => {
     const { id } = request.params;
     const client = await fastify.pg.connect();
     try {

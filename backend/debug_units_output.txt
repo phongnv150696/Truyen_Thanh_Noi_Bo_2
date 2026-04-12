@@ -1,0 +1,33 @@
+--- USERS ---
+User ID: 28, Name: Nguyễn Bá D, Unit ID: 31
+User ID: 1, Name: Quản trị viên Hệ thống, Unit ID: 24
+User ID: 32, Name: Đinh Ngoc Hai, Unit ID: 28
+
+--- UNITS ---
+Unit ID: 1, Name: Bộ Chỉ Huy OpenClaw, Parent ID: null, Level: 1
+Unit ID: 2, Name: Trung đoàn Hải quân 123, Parent ID: null, Level: 1
+Unit ID: 3, Name: Tiểu đoàn 1, Parent ID: null, Level: 2
+Unit ID: 4, Name: Tiểu đoàn 2, Parent ID: null, Level: 2
+Unit ID: 5, Name: Đại đội 1, Parent ID: null, Level: 3
+Unit ID: 10, Name: Tòa nhà Chỉ huy (A1), Parent ID: null, Level: 1
+Unit ID: 11, Name: Tòa nhà Kỹ thuật (B1), Parent ID: null, Level: 1
+Unit ID: 12, Name: Tòa nhà Hậu cần (C1), Parent ID: null, Level: 1
+Unit ID: 13, Name: Cổng gác / Vọng gác, Parent ID: null, Level: 1
+Unit ID: 14, Name: Sân vận động & Khu tập luyện, Parent ID: null, Level: 1
+Unit ID: 15, Name: Tiểu đoàn 1, Parent ID: 1, Level: 2
+Unit ID: 16, Name: Đại đội 1, Parent ID: 15, Level: 3
+Unit ID: 17, Name: Đại đội 2, Parent ID: 15, Level: 3
+Unit ID: 18, Name: Đại đội 3, Parent ID: 15, Level: 3
+Unit ID: 19, Name: Đại đội 8, Parent ID: 1, Level: 2
+Unit ID: 20, Name: Tiểu đoàn 5, Parent ID: 1, Level: 2
+Unit ID: 21, Name: Quân khu 3, Parent ID: null, Level: 1
+Unit ID: 22, Name: Sư đoàn 395, Parent ID: 21, Level: 2
+Unit ID: 23, Name: Trung đoàn 8, Parent ID: 22, Level: 3
+Unit ID: 24, Name: Tiểu đoàn 5, Parent ID: 23, Level: 4
+Unit ID: 25, Name: Quân khu 3, Parent ID: null, Level: 1
+Unit ID: 26, Name: Sư đoàn 395, Parent ID: 25, Level: 2
+Unit ID: 27, Name: Trung đoàn 8, Parent ID: 26, Level: 3
+Unit ID: 28, Name: Tiểu đoàn 5, Parent ID: 27, Level: 4
+Unit ID: 29, Name: Đại đội 8, Parent ID: 28, Level: 5
+Unit ID: 30, Name: Đại đội 9, Parent ID: 28, Level: 5
+Unit ID: 31, Name: Đại đội 7, Parent ID: 28, Level: 5

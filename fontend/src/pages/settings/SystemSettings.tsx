@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_URL } from '../../config'
 import { 
   Settings, 
   Activity, 
@@ -48,7 +49,7 @@ export default function SystemSettings({ onLogout }: { onLogout?: () => void }) 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/settings`, { headers: getHeaders() });
+      const res = await fetch(`${API_URL}/settings`, { headers: getHeaders() });
       if (res.status === 401) {
         onLogout?.();
         return;
@@ -85,7 +86,7 @@ export default function SystemSettings({ onLogout }: { onLogout?: () => void }) 
   const handleUpdateConfig = async (key: string, value: string) => {
     setSaving(key);
     try {
-      const res = await fetch(`http://${window.location.hostname}:3000/settings/${key}`, {
+      const res = await fetch(`${API_URL}/settings/${key}`, {
         method: 'PATCH',
         headers: { 
           'Content-Type': 'application/json',
