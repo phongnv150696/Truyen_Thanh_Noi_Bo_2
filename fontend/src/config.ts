@@ -8,9 +8,8 @@ const getApiUrl = () => {
     
     // 1. Handle GitHub Codespaces
     if (hostname.includes('.github.dev') || hostname.includes('.app.github.dev')) {
-        // Replace frontend port (-80) with backend port (-3000)
-        // Note: We use https for Codespace port forwarding
-        const backendHostname = hostname.replace(/-80\./, '-3000.');
+        // Regex to find the port part (e.g., -5173 or -80) and replace with -3000
+        const backendHostname = hostname.replace(/-\d+\./, '-3000.');
         return `https://${backendHostname}`;
     }
     
@@ -26,8 +25,8 @@ export const WEBSOCKET_URL = (() => {
     // Check if we are in GitHub Codespaces
     if (hostname.includes('.github.dev') || hostname.includes('.app.github.dev')) {
         // Codespaces uses subdomains for ports: <name>-80.<region>.github.dev
-        // We need to change -80 to -3000 for the backend
-        const backendHostname = hostname.replace(/-80\./, '-3000.');
+        // We need to change the port part to -3000 for the backend
+        const backendHostname = hostname.replace(/-\d+\./, '-3000.');
         return `${wsProtocol}//${backendHostname}/ws`;
     }
     
