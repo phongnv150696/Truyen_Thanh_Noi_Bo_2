@@ -53,10 +53,18 @@ const server: FastifyInstance = fastify({
 async function setupServer() {
     // CORS
     await server.register(cors, {
-      origin: true, // Allow all origins in development to support Codespaces
+      origin: (origin, cb) => {
+        // In development / Codespaces, allow all origins
+        if (!origin || origin.includes('github.dev') || origin.includes('app.github.dev') || origin.includes('localhost')) {
+          cb(null, true);
+          return;
+        }
+        cb(new Error("Not allowed by CORS"), false);
+      },
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
-      credentials: true
+      allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'Accept', 'X-Requested-With'],
+      credentials: true,
+      preflightContinue: false
     });
 
     // Rate Limiting (Global: 1000 req/min)
