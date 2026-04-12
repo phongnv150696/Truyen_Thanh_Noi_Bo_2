@@ -7,7 +7,7 @@ import { AudioStreamService } from '../services/audioStream.js';
 import fs from 'fs';
 
 // Store connected clients with metadata
-const clients = new Map<WebSocket, { channel_id?: number, device_id?: number, protocol?: string, isBrowser?: boolean }>();
+const clients = new Map<WebSocket, { channel_id?: number, device_id?: number, protocol?: string, isBrowser?: boolean, identifiedAt?: Date }>();
 
 // Helper to update channel status in DB
 async function updateChannelStatus(fastify: FastifyInstance, channelId: number, status: 'online' | 'offline') {
@@ -147,7 +147,7 @@ async function socketRoutes(fastify: FastifyInstance) {
                                        targetChannelId === '0';
 
               // 2. Client is a monitor: metadata.channel_id 0 means this client monitors EVERYTHING
-              const isGlobalMonitor = deviceChannelId === 0 || deviceChannelId === '0';
+              const isGlobalMonitor = deviceChannelId === 0;
 
               // 3. Channel match: Explicit match between metadata and target
               const isSpecificMatch = deviceChannelId != null && String(deviceChannelId) === String(targetChannelId);
@@ -190,7 +190,7 @@ async function socketRoutes(fastify: FastifyInstance) {
             let shouldSend = false;
             if (targetChannelId === undefined || targetChannelId === null || targetChannelId === 0 || targetChannelId === '0') {
               shouldSend = true;
-            } else if (metadata.channel_id === 0 || metadata.channel_id === '0') {
+            } else if (metadata.channel_id === 0) {
               shouldSend = true;
             } else if (metadata.channel_id != null && String(metadata.channel_id) === String(targetChannelId)) {
               shouldSend = true;
