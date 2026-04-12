@@ -27,6 +27,12 @@ async function run() {
 
   console.log('🚀 Starting database migration...');
 
+  if (!process.env.DATABASE_URL) {
+    console.error('❌ FATAL ERROR: DATABASE_URL is not defined in your .env file.');
+    console.log('💡 Please ensure you have a .env file in the backend directory with your PostgreSQL connection string.');
+    process.exit(1);
+  }
+
   for (const file of files) {
     const filePath = path.join(dbDir, file);
     if (!fs.existsSync(filePath)) {
@@ -40,11 +46,12 @@ async function run() {
       await pool.query(sql);
       console.log(`✅ ${file} completed.`);
     } catch (err) {
+      const msg = err.message || '';
       // Ignore "already exists" errors to allow re-running the script
-      if (err.message.includes('already exists') || err.message.includes('already a column')) {
+      if (msg.includes('already exists') || msg.includes('already a column') || msg.includes('already be a member')) {
         console.log(`ℹ️ ${file}: Some elements already exist, skipping them.`);
       } else {
-        console.error(`❌ Error in ${file}:`, err.message);
+        console.error(`❌ Error in ${file}:`, err); // Show full error object
       }
     }
   }
