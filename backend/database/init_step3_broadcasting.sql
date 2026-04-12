@@ -40,7 +40,7 @@ CREATE TABLE broadcast_sessions (
 CREATE TABLE on_demand_requests (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
-    content_id INTEGER REFERENCES content_items(id) ON DELETxE CASCADE,
+    content_id INTEGER REFERENCES content_items(id) ON DELETE CASCADE,
     channel_id INTEGER REFERENCES channels(id),
     priority INTEGER DEFAULT 1,
     status VARCHAR(50) DEFAULT 'pending', -- pending, playing, completed, rejected
