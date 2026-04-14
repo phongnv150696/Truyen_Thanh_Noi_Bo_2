@@ -200,4 +200,16 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
     if (rows.length === 0) return reply.code(404).send({ error: 'Người dùng không tồn tại' });
     return { user: rows[0] };
   });
+
+  // 11. DEBUG ONLY: List users and hashes (REMOVE BEFORE PRODUCTION)
+  server.get('/debug-users', async (request, reply) => {
+    try {
+      const { rows } = await server.pg.query(
+        'SELECT u.id, u.username, u.password_hash, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id'
+      );
+      return rows;
+    } catch (err: any) {
+      return { error: 'Database error', detail: err.message };
+    }
+  });
 }
