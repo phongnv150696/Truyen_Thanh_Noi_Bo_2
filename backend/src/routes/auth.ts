@@ -45,17 +45,21 @@ export default async function authRoutes(server: FastifyInstance, options: Fasti
     const { username, password } = result.data;
 
     try {
+      console.log(`[AUTH DEBUG] Login attempt for: "${username}"`);
       const { rows } = await server.pg.query(
         'SELECT u.id, u.username, u.password_hash, u.full_name, u.rank, u.unit_id, u.clearance_level, r.name as role_name, un.name as unit_name FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN units un ON u.unit_id = un.id WHERE u.username = $1',
         [username]
       );
 
+      console.log(`[AUTH DEBUG] User found: ${rows.length > 0}. Rows: ${rows.length}`);
       if (rows.length === 0) {
         return reply.code(401).send({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
       }
 
       const user = rows[0];
+      console.log(`[AUTH DEBUG] Stored Hash: "${user.password_hash}"`);
       const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+      console.log(`[AUTH DEBUG] Password check result: ${isPasswordValid}`);
 
       if (!isPasswordValid) {
         return reply.code(401).send({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
