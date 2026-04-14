@@ -11,6 +11,10 @@ const clients = new Map<WebSocket, { channel_id?: number, device_id?: number, pr
 
 // Helper to update channel status in DB
 async function updateChannelStatus(fastify: FastifyInstance, channelId: number, status: 'online' | 'offline') {
+  if (!fastify.pg) {
+    fastify.log.warn('[SOCKET] Skipping channel status update: Database plugin not ready');
+    return;
+  }
   try {
     await fastify.pg.query(
       "UPDATE channels SET status = $1 WHERE id = $2",
@@ -24,6 +28,10 @@ async function updateChannelStatus(fastify: FastifyInstance, channelId: number, 
 
 // Helper to log broadcast start for all connected devices in a channel
 async function logBroadcastStart(fastify: FastifyInstance, data: any) {
+  if (!fastify.pg) {
+    fastify.log.warn('[SOCKET] Skipping broadcast log: Database plugin not ready');
+    return;
+  }
   const { channel_id, schedule_id, content_id } = data;
   if (!channel_id) return;
 
@@ -53,6 +61,7 @@ async function logBroadcastStart(fastify: FastifyInstance, data: any) {
 
 // Helper to update log on completion/error
 async function updateBroadcastLog(fastify: FastifyInstance, deviceId: number, status: 'success' | 'failed', errorMsg?: string) {
+  if (!fastify.pg) return;
   try {
     await fastify.pg.query(`
       UPDATE device_broadcast_logs 
@@ -91,13 +100,17 @@ async function triggerXiaoZhiBroadcast(fastify: FastifyInstance, data: any) {
 async function socketRoutes(fastify: FastifyInstance) {
   fastify.log.info('Registering Socket Routes...');
 
-  // 1. Initialize all channels to offline on startup
-  try {
-    await fastify.pg.query("UPDATE channels SET status = 'offline'");
-    fastify.log.info('✅ All channels initialized to offline');
-  } catch (err: any) {
-    fastify.log.error(`Failed to initialize channel statuses: ${err.message}`);
-  }
+  // 1. Initialize all channels to offline when the server is fully ready
+  fastify.addHook('onReady', async () => {
+    try {
+      if (fastify.pg) {
+        await fastify.pg.query("UPDATE channels SET status = 'offline'");
+        fastify.log.info('✅ [SOCKET] All channels initialized to offline');
+      }
+    } catch (err: any) {
+      fastify.log.error(`[SOCKET] Failed to initialize channel statuses: ${err.message || 'Unknown DB error'}`);
+    }
+  });
 
   // 2. Decorate broadcast BEFORE routes
   fastify.decorate('broadcast', async (data: any) => {

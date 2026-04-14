@@ -80,16 +80,16 @@ async function setupServer() {
       }
     });
 
-    // WebSocket support (Register early)
-    await server.register(fastifyWebsocket);
-    await server.register(socketRoutes);
-
-    // Database
+    // Database (Must be registered early as routes depend on it)
     await server.register(postgres, {
       connectionString: process.env.DATABASE_URL // validated at startup — never undefined here
     });
 
-    // JWT
+    // WebSocket support
+    await server.register(fastifyWebsocket);
+    await server.register(socketRoutes);
+
+    // JWT (Must be registered before auth-dependent routes)
     await server.register(fastifyJwt, {
       secret: process.env.JWT_SECRET! // validated at startup — never undefined here
     });
